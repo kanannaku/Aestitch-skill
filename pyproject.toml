@@ -1,0 +1,23 @@
+[project]
+name = "aestitch-skill"
+version = "0.1.0"
+description = "Local-first taste memory and design drift evidence for coding agents"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+readme = "README.md"
+authors = [{name = "Suatlora"}]
+classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
+
+[project.optional-dependencies]
+visual = ["pillow>=10"]
+browser = ["playwright>=1.40"]
+all = ["pillow>=10", "playwright>=1.40"]
+
+[project.scripts]
+aestitch = "aestitch:main"
+
+[tool.setuptools]
+py-modules = ["aestitch"]
+
+[tool.setuptools.package-dir]
+"" = "skills/aestitch/scripts"
