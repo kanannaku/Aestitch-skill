@@ -26,10 +26,12 @@ Reliability patch. No new creative-generation or aesthetic-scoring features.
   `confirmation_context`. Reports mark commits and evidence classes as **declared by
   the Agent** and always state `Identity verified: no`.
 - `concept render` uses a cross-process single-writer lock and atomically reserves
-  observation IDs. A concurrent render fails clearly instead of racing; failed
-  captures keep a `status: failed` manifest and the latest-success pointer is only
-  updated after a complete capture. Long Concept IDs that truncate to the same prefix
-  now include a short hash.
+  observation IDs. A concurrent render fails clearly instead of racing; a lock is
+  reclaimed only when its recorded owner process is confirmed dead (age alone never
+  preempts an active capture), malformed locks require explicit manual recovery, and
+  release removes only the caller's own lock. Failed captures keep a `status: failed`
+  manifest and the latest-success pointer is only updated after a complete capture.
+  Long Concept IDs that truncate to the same prefix now include a short hash.
 - Reading a packet validates field types and raises a readable
   `Experiment schema error` instead of `AttributeError`/`TypeError`. Evidence paths are
   re-checked against the project root on every read (absolute paths, `..` escapes and

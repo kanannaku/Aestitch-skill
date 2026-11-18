@@ -5,9 +5,11 @@ Browser E2E is opt-in (AESTITCH_TEST_CHROMIUM) so normal CI stays portable.
 import os
 from pathlib import Path
 import json
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -180,6 +182,10 @@ class CreativeWorkflowTest(unittest.TestCase):
         thread.start()
         try:
             self.assertTrue(started.wait(5), "first render did not start")
+            # Age alone must never authorise takeover of an active render.
+            old = time.time() - 3 * 60 * 60
+            os.utime(self.root / ".aestitch" / "concepts" / "race" / ".render.lock",
+                     (old, old))
             with self.assertRaisesRegex(ValueError, "already being rendered"):
                 concept_render(self.root, "race", "desktop")
         finally:
@@ -190,6 +196,85 @@ class CreativeWorkflowTest(unittest.TestCase):
                          .read_text(encoding="utf-8"))
         self.assertEqual(rec["observation_id"], "concept-race")
         self.assertFalse((self.root / ".aestitch" / "concepts" / "race" / ".render.lock").exists())
+
+    def test_dead_owner_lock_is_recovered(self):
+        concept_add(self.root, "recover", "Recover", "One", "Mechanism", str(self.html_a))
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        lock = self.root / ".aestitch" / "concepts" / "recover" / ".render.lock"
+        lock.write_text(json.dumps({"pid": dead.pid, "token": "dead-token",
+                                    "started": time.time() - 3600}), encoding="utf-8")
+        with patch("aestitch_creative.observe", return_value={"id": "concept-recover"}):
+            concept_render(self.root, "recover", "desktop")
+        rec = json.loads((self.root / ".aestitch" / "concepts" / "recover" / "concept.json")
+                         .read_text(encoding="utf-8"))
+        self.assertEqual(rec["observation_id"], "concept-recover")
+        self.assertFalse(lock.exists())
+
+    def test_lock_release_never_deletes_a_foreign_lock(self):
+        concept_add(self.root, "owner", "Owner", "One", "Mechanism", str(self.html_a))
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_observe(root, obs_id, *args, **kwargs):
+            started.set()
+            release.wait(10)
+            return {"id": obs_id}
+
+        def first_render():
+            with patch("aestitch_creative.observe", side_effect=slow_observe):
+                concept_render(self.root, "owner", "desktop")
+
+        thread = threading.Thread(target=first_render)
+        thread.start()
+        lock = self.root / ".aestitch" / "concepts" / "owner" / ".render.lock"
+        try:
+            self.assertTrue(started.wait(5))
+            lock.write_text(json.dumps({"pid": os.getpid(), "token": "foreign",
+                                        "started": time.time()}), encoding="utf-8")
+        finally:
+            release.set()
+            thread.join(10)
+        self.assertTrue(lock.exists(), "release deleted a lock owned by another token")
+        self.assertEqual(json.loads(lock.read_text(encoding="utf-8"))["token"], "foreign")
+        lock.unlink()
+
+    def test_malformed_lock_requires_manual_recovery(self):
+        concept_add(self.root, "unknown", "Unknown", "One", "Mechanism", str(self.html_a))
+        lock = self.root / ".aestitch" / "concepts" / "unknown" / ".render.lock"
+        lock.write_text("not-json", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "delete this file manually"):
+            concept_render(self.root, "unknown", "desktop")
+        self.assertTrue(lock.exists())
+
+    def test_active_lock_is_respected_across_processes(self):
+        concept_add(self.root, "proc", "Proc", "One", "Mechanism", str(self.html_a))
+        concept_dir = self.root / ".aestitch" / "concepts" / "proc"
+        code = (
+            "import sys, time\n"
+            f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+            "from pathlib import Path\n"
+            "from aestitch_creative import _concept_write_lock\n"
+            f"with _concept_write_lock(Path({str(concept_dir)!r})):\n"
+            "    print('LOCKED', flush=True)\n"
+            "    time.sleep(20)\n"
+        )
+        proc = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                                text=True)
+        self.addCleanup(lambda: (proc.kill(), proc.wait()))
+        try:
+            line: list[str] = []
+            reader = threading.Thread(target=lambda: line.append(proc.stdout.readline()),
+                                      daemon=True)
+            reader.start()
+            reader.join(10)
+            self.assertTrue(line, "child process did not acquire the lock in time")
+            self.assertEqual(line[0].strip(), "LOCKED")
+            with self.assertRaisesRegex(ValueError, "already being rendered"):
+                concept_render(self.root, "proc", "desktop")
+        finally:
+            proc.kill()
+            proc.wait()
 
     def test_failed_render_is_traceable_and_never_reused(self):
         concept_add(self.root, "failure", "Failure", "One", "Mechanism", str(self.html_a))

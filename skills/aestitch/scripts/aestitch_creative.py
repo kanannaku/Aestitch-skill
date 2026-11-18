@@ -17,6 +17,7 @@ import shutil
 import time
 from typing import Any, Iterator
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from aestitch_workflows import digest, list_references, load, save, slug, state_dir
 
@@ -25,51 +26,106 @@ MAX_STEPS = 5
 MAX_HTML_BYTES = 2 * 1024 * 1024
 STATIC_EVIDENCE_SCOPE = ["static_layout", "scroll_positions"]
 NOT_OBSERVED_STATES = ["interaction", "motion", "hover", "focus", "keyboard"]
-# A crashed process must not block a concept forever. Locks older than this are
-# considered abandoned and removed; anything inside the window is a hard conflict.
-LOCK_STALE_SECONDS = 15 * 60
-LOCK_RETRY_ATTEMPTS = 3
+# A lock is only reclaimed when its recorded owner process is confirmed dead.
+# Age alone never authorises takeover: a legitimate capture may run for hours.
+LOCK_RETRY_ATTEMPTS = 5
+
+
+def _pid_alive(pid: int) -> bool:
+    """Best-effort liveness check without new dependencies.
+
+    On Windows `os.kill(pid, 0)` would terminate the process, so use
+    OpenProcess/GetExitCodeProcess instead.
+    """
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _read_lock(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    pid, token = data.get("pid"), data.get("token")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    if not isinstance(token, str) or not token:
+        return None
+    return data
 
 
 @contextmanager
 def _concept_write_lock(concept_dir: Path) -> Iterator[None]:
     """Cross-process single-writer lock for one Concept directory.
 
-    Uses an atomic exclusive create so two Claude Code processes cannot render the
-    same Concept simultaneously. There is no wait queue: a concurrent caller fails
-    clearly instead of silently overwriting evidence.
+    Atomic exclusive create, never time-based preemption: an active render is
+    respected regardless of duration. A lock is reclaimed only when its recorded
+    owner process is confirmed dead; malformed/unknown ownership is refused with
+    an explicit manual-recovery instruction. Release only removes our own lock.
     """
     lock_path = concept_dir / ".render.lock"
+    token = uuid4().hex
+    payload = json.dumps({"pid": os.getpid(), "token": token, "started": time.time()})
     fd = None
-    for attempt in range(LOCK_RETRY_ATTEMPTS):
+    for _ in range(LOCK_RETRY_ATTEMPTS):
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            try:
-                age = time.time() - lock_path.stat().st_mtime
-            except OSError:
-                age = 0.0
-            if age > LOCK_STALE_SECONDS and attempt == 0:
-                try:
-                    lock_path.unlink()
-                except OSError:
-                    pass
+            owner = _read_lock(lock_path)
+            if owner is None:
+                raise ValueError(
+                    "Concept render lock has unknown ownership: " + str(lock_path) +
+                    ". If no render is running, delete this file manually and retry.")
+            if _pid_alive(owner["pid"]):
+                raise ValueError("Concept is already being rendered by another process: " +
+                                 str(lock_path) + "; retry after it finishes")
+            # Owner process is gone. Re-read to avoid removing a lock that changed
+            # between the liveness check and the unlink.
+            if _read_lock(lock_path) != owner:
                 continue
-            raise ValueError("Concept is already being rendered by another process; "
-                             "retry after it finishes (stale locks expire after 15 minutes)")
+            try:
+                os.unlink(lock_path)
+            except OSError:
+                pass
+            continue
         else:
             break
     if fd is None:
         raise ValueError("Could not acquire the concept render lock; another process holds it")
     try:
-        os.write(fd, f"pid={os.getpid()}\nstarted={time.time()}\n".encode("utf-8"))
+        os.write(fd, payload.encode("utf-8"))
         yield
     finally:
         try:
             os.close(fd)
         finally:
+            # Only remove the lock if it is still ours; a reclaimed lock belongs
+            # to another process and must not be deleted here.
             try:
-                lock_path.unlink()
+                if (_read_lock(lock_path) or {}).get("token") == token:
+                    lock_path.unlink()
             except OSError:
                 pass
 
