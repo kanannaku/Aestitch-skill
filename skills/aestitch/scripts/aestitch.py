@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aestitch v0.2: local-first design memory and visual change evidence.
+"""Aestitch v0.3: evidence-first design exploration and visual handoff.
 
 Python >=3.10. Browser capture optionally requires playwright + Chromium.
 Pixel comparison optionally requires Pillow. No network calls except user-requested
@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 AXES = ("composition", "typography", "color", "motion", "interaction", "content", "other")
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
 TAGS = ("baseline", "candidate")
@@ -246,7 +246,40 @@ def compare_images(baseline: Path, candidate: Path, diff_output: Path,
             "mean_abs_channel_diff": round(mean_diff, 3), "diff_image": str(diff_output)}
 
 
-def guard(root: Path, warn_change_pct: float, pixel_threshold: int) -> int:
+def compare_top_viewport(baseline: Path, candidate: Path, diff_output: Path,
+                         pixel_threshold: int, viewport_width: int, viewport_height: int) -> dict[str, Any]:
+    """Compare only the shared first-viewport region of full-page screenshots.
+
+    This avoids losing *all* evidence when appended content changes page height.
+    It is not a replacement for section-anchored or interactive-state checking.
+    """
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError("Viewport comparison requires Pillow: pip install pillow") from exc
+    with Image.open(baseline) as src, Image.open(candidate) as dst:
+        a, b = src.convert("RGB"), dst.convert("RGB")
+    if a.width != viewport_width or b.width != viewport_width:
+        return {"status": "dimension_mismatch", "baseline_size": list(a.size),
+                "candidate_size": list(b.size), "note": "Different viewport widths; cannot align screenshots"}
+    common_height = min(viewport_height, a.height, b.height)
+    if common_height < 1:
+        raise ValueError("No common viewport to compare")
+    from tempfile import TemporaryDirectory
+    with TemporaryDirectory() as temp:
+        aa, bb = Path(temp) / "a.png", Path(temp) / "b.png"
+        a.crop((0, 0, viewport_width, common_height)).save(aa)
+        b.crop((0, 0, viewport_width, common_height)).save(bb)
+        compared = compare_images(aa, bb, diff_output, pixel_threshold)
+    compared["source_full_size"] = list(a.size)
+    compared["candidate_full_size"] = list(b.size)
+    compared["compared_region"] = {"x": 0, "y": 0, "width": viewport_width,
+                                    "height": common_height}
+    compared["note"] = "First-viewport evidence only; appending sections may still change lower page regions."
+    return compared
+
+
+def guard(root: Path, warn_change_pct: float, pixel_threshold: int, top_viewport: bool = False) -> int:
     if not 0 <= warn_change_pct <= 100:
         raise ValueError("--warn-change-pct must be between 0 and 100")
     if not 0 <= pixel_threshold <= 255:
@@ -262,7 +295,9 @@ def guard(root: Path, warn_change_pct: float, pixel_threshold: int) -> int:
             checks.append({"viewport": viewport, "status": "missing_evidence",
                            "missing": [str(p) for p in (source, target) if not p.exists()]})
             continue
-        check = compare_images(source, target, report_dir / f"diff-{viewport}.png", pixel_threshold)
+        check = (compare_top_viewport(source, target, report_dir / f"diff-{viewport}.png",
+                                      pixel_threshold, *VIEWPORTS[viewport]) if top_viewport else
+                 compare_images(source, target, report_dir / f"diff-{viewport}.png", pixel_threshold))
         check["viewport"] = viewport
         for label, image in (("baseline", source), ("candidate", target)):
             meta = image.with_suffix(".json")
@@ -275,6 +310,7 @@ def guard(root: Path, warn_change_pct: float, pixel_threshold: int) -> int:
     report = {"schema_version": 1, "generated_at": timestamp(),
               "disclaimer": "Pixel difference is not aesthetic quality. A human or vision-enabled agent must review intent and meaning.",
               "threshold": {"warn_change_pct": warn_change_pct, "pixel_threshold": pixel_threshold},
+              "comparison_mode": "top_viewport" if top_viewport else "full_page",
               "checks": checks}
     write_json(report_dir / "guard-report.json", report)
     lines = ["# Aestitch — visual change report", "", f"Generated: {report['generated_at']}", "",
@@ -329,7 +365,7 @@ def doctor() -> int:
 
 
 def make_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="aestitch", description="Local-first design memory and visual change guardian")
+    parser = argparse.ArgumentParser(prog="aestitch", description="Evidence-first art direction, reference observation and visual handoff")
     parser.add_argument("--root", default=".", help="Target website project root (default: current directory)")
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -353,7 +389,8 @@ def make_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("guard", help="Compare baseline and candidate screenshots")
     p.add_argument("--warn-change-pct", type=float, default=12.0)
     p.add_argument("--pixel-threshold", type=int, default=24)
-    # v0.2 structured design workflows; no model, network, or vector DB required.
+    p.add_argument("--top-viewport", action="store_true", help="Compare first viewport even if full-page heights differ")
+    # Structured design workflows; no model or vector DB required.
     reference = sub.add_parser("reference", help="Save and review reference metadata (never fetch URLs)")
     ref_actions = reference.add_subparsers(dest="reference_action", required=True)
     rp = ref_actions.add_parser("add")
@@ -374,6 +411,9 @@ def make_parser() -> argparse.ArgumentParser:
     tp.add_argument("--choice", required=True, choices=("left", "right", "both", "neither", "unsure"))
     tp.add_argument("--why", default="")
     tp.add_argument("--context", default="")
+    tp.add_argument("--relative-preference", choices=("left", "right", "equal", "unknown"), default="unknown",
+                    help="Separate relative preference from absolute acceptance")
+    tp.add_argument("--acceptance", choices=("left", "right", "both", "neither", "unknown"), default="unknown")
     taste_actions.add_parser("report")
 
     contract = sub.add_parser("contract", help="Create or inspect cross-model visual design contracts")
@@ -406,6 +446,45 @@ def make_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-deleted", type=int, default=0)
     sp.add_argument("--max-dependencies", type=int, default=0)
 
+    # v0.3: browser evidence, original concept prototypes, and design handoff.
+    observe = sub.add_parser("observe", help="Collect real browser evidence from a trusted page or offline HTML")
+    observe_actions = observe.add_subparsers(dest="observe_action", required=True)
+    op = observe_actions.add_parser("capture")
+    op.add_argument("--id", required=True)
+    osource = op.add_mutually_exclusive_group(required=True)
+    osource.add_argument("--url")
+    osource.add_argument("--html-file")
+    op.add_argument("--viewport", choices=("desktop", "mobile", "both"), default="both")
+    op.add_argument("--steps", type=int, default=3, help="Capture 1 to 5 scroll states")
+    op.add_argument("--allow-remote", action="store_true", help="Explicit opt-in for visiting trusted remote websites")
+    op.add_argument("--reference", default="", help="Optional previously saved reference ID")
+    op.add_argument("--overwrite", action="store_true")
+    op = observe_actions.add_parser("report")
+    op.add_argument("--id", required=True)
+
+    concept = sub.add_parser("concept", help="Register and compare independent visual prototypes")
+    concept_actions = concept.add_subparsers(dest="concept_action", required=True)
+    cp = concept_actions.add_parser("add")
+    cp.add_argument("--id", required=True)
+    cp.add_argument("--title", required=True)
+    cp.add_argument("--thesis", required=True, help="The creative idea, not a color palette")
+    cp.add_argument("--mechanism", required=True, help="Distinctive visual or interaction mechanism")
+    cp.add_argument("--html-file", required=True, help="Trusted self-contained HTML in project")
+    cp.add_argument("--mode", choices=("macro", "meso", "micro"), default="macro")
+    cp = concept_actions.add_parser("render")
+    cp.add_argument("--id", required=True)
+    cp.add_argument("--viewport", choices=("desktop", "mobile", "both"), default="both")
+    cp = concept_actions.add_parser("compare")
+    cp.add_argument("--left", required=True)
+    cp.add_argument("--right", required=True)
+    cp.add_argument("--viewport", choices=("desktop", "mobile"), default="desktop")
+
+    fidelity = sub.add_parser("fidelity", help="Compare approved-intent prototype evidence with actual implementation")
+    fidelity.add_argument("--concept", required=True)
+    fidelity.add_argument("--observation", required=True)
+    fidelity.add_argument("--viewport", choices=("desktop", "mobile"), default="desktop")
+    fidelity.add_argument("--pixel-threshold", type=int, default=24)
+
     sub.add_parser("doctor", help="Check optional dependencies")
     return parser
 
@@ -424,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
             return capture(root, args.url, args.html_file, args.tag, args.viewport, args.wait_ms,
                            args.allow_remote, args.overwrite_baseline)
         if args.command == "guard":
-            return guard(root, args.warn_change_pct, args.pixel_threshold)
+            return guard(root, args.warn_change_pct, args.pixel_threshold, args.top_viewport)
         if args.command in ("reference", "taste", "contract", "scope"):
             from aestitch_workflows import (
                 add_reference, list_references, taste_compare, taste_report,
@@ -440,7 +519,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(list_references(root), ensure_ascii=False, indent=2))
             elif args.command == "taste":
                 if args.taste_action == "compare":
-                    item = taste_compare(root, args.left, args.right, args.choice, args.why, args.context)
+                    item = taste_compare(root, args.left, args.right, args.choice, args.why, args.context,
+                                         args.relative_preference, args.acceptance)
                     print(f"Saved contextual choice {item['id']}: {item['choice']}")
                 else:
                     print(taste_report(root))
@@ -470,6 +550,32 @@ def main(argv: list[str] | None = None) -> int:
                     for reason in result["review_reasons"]:
                         print("Review: " + reason)
                     return code
+            return 0
+        if args.command in ("observe", "concept", "fidelity"):
+            from aestitch_creative import (observe, observe_report, concept_add,
+                concept_render, concept_compare, fidelity_compare)
+            if args.command == "observe":
+                if args.observe_action == "capture":
+                    result = observe(root, args.id, args.url, args.html_file, args.viewport,
+                                     args.steps, args.allow_remote, args.reference, args.overwrite)
+                    print(f"Captured observation {result['id']} with viewports: {', '.join(result['viewports'])}")
+                else:
+                    print(observe_report(root, args.id))
+            elif args.command == "concept":
+                if args.concept_action == "add":
+                    record = concept_add(root, args.id, args.title, args.thesis,
+                                         args.mechanism, args.html_file, args.mode)
+                    print(f"Registered unreviewed {record['scope']} concept {record['id']}")
+                elif args.concept_action == "render":
+                    result = concept_render(root, args.id, args.viewport)
+                    print(f"Rendered {args.id}: {', '.join(result['viewports'])}")
+                else:
+                    result = concept_compare(root, args.left, args.right, args.viewport)
+                    print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                result = fidelity_compare(root, args.concept, args.observation,
+                                          args.viewport, args.pixel_threshold)
+                print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if args.command == "doctor":
             return doctor()

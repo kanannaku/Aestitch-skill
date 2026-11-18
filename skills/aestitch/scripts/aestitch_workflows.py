@@ -113,15 +113,22 @@ def list_references(root: Path) -> list[dict[str, Any]]:
     return data
 
 
-def taste_compare(root: Path, left: str, right: str, choice: str, why: str, context: str) -> dict[str, Any]:
+def taste_compare(root: Path, left: str, right: str, choice: str, why: str, context: str,
+                  relative_preference: str = "unknown", acceptance: str = "unknown") -> dict[str, Any]:
     state = state_dir(root)
+    if relative_preference not in ("left", "right", "equal", "unknown"):
+        raise ValueError("Invalid relative preference")
+    if acceptance not in ("left", "right", "both", "neither", "unknown"):
+        raise ValueError("Invalid absolute acceptance")
     if choice not in VALID_CHOICES or left == right:
         raise ValueError("Choose two different references and one valid preference outcome.")
     known = {r.get("id") for r in list_references(root)}
     if left not in known or right not in known:
         raise ValueError("Both --left and --right must refer to saved reference IDs")
     item = {"id": "choice-" + uuid4().hex[:12], "left": left, "right": right,
-            "choice": choice, "why": why.strip(), "context": context.strip(),
+            "choice": choice, "relative_preference": relative_preference,
+            "absolute_acceptance": acceptance,
+            "why": why.strip(), "context": context.strip(),
             "source": "user-reported", "recorded_at": now()}
     path = state / "comparisons.json"
     comparisons = load(path, [])
@@ -144,6 +151,10 @@ def taste_report(root: Path) -> str:
     for c in comparisons:
         l, r = refs.get(c.get("left"), {}), refs.get(c.get("right"), {})
         lines.append(f"- **{l.get('label', c.get('left'))}** vs **{r.get('label', c.get('right'))}**: {c.get('choice')} (context: {c.get('context') or 'unspecified'})")
+        if c.get("relative_preference", "unknown") != "unknown":
+            lines.append(f"  - Relative preference: {c['relative_preference']}")
+        if c.get("absolute_acceptance", "unknown") != "unknown":
+            lines.append(f"  - Absolute acceptance: {c['absolute_acceptance']}")
         if c.get("why"):
             lines.append(f"  - User's words: {c['why']}")
     lines += ["", "## Suggested next step", "", "Form a *hypothesis*, then compare designs that isolate one variable (layout, type, color, motion). Do not mark the hypothesis user-confirmed without explicit approval.", ""]

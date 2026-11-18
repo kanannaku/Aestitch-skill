@@ -1,54 +1,84 @@
-# Aestitch · 由 Suatlora 创建
+# Aestitch · Suatlora 出品
 
-**发现你的审美，把灵感变成设计契约，并在反复开发中保留设计意图。**
+**发现审美，探索真正不同的创意方向，并减少从设计到代码的表达损失。**
 
-Aestitch v0.2.0 是一个本地优先的 Agent Skill 与命令行工具。它**不是**自动美化网站的模型，也不能直接从截图理解你的审美、替代用户做最终设计判断。
+> **v0.3.0 预览版**：这是一套 Agent Skill + 本地 Python 工具。它不会自动变成艺术总监，也不会凭网站链接直接生成优秀的原创设计。它提供真实页面采集、视觉原型对照和跨模型交接证据，让 Codex 等 Agent 的设计工作可以被观察与验证。
 
-## 首版已实现的能力
+## 为什么改版？
 
-- **Reference Intelligence 的基础**：记录 URL 元数据或复制你提供的本地截图，保存参考重点和观察；不会自动访问或解析网页。
-- **Taste Discovery 的基础**：记录成对参考的选择，允许“都喜欢 / 都不喜欢 / 不确定”，保留场景，不武断生成固定风格标签。
-- **Design Contract**：把页面目标、创意方向、参考 ID 和实现范围保存为 JSON，并输出可交给 Codex、Claude Code 等工具的 Markdown。正式批准要求显式确认和项目内的原型截图证据。
-- **Architecture Guardian 的第一步**：通过源码文件 SHA-256 快照，检查本轮增加、删除、修改的文件，越界修改和新增 package.json 依赖；这不是完整复杂度分析。
-- **Visual Guardian（保留 v0.1）**：真实浏览器桌面/移动截图、像素差异、横向溢出与基础错误诊断。像素差异不是美学评分。
+上一轮 A/C 对照实验里，无 Skill 与 Aestitch 都做出了比较规整的作品集，但未能达到用户希望的视觉特色。继续改颜色、调网格和追加动效没有解决问题。v0.3 把工作重心移到设计之前的三个环节：**观察参考 → 探索原创艺术方向 → 验证设计实现**。
 
-## Windows / PowerShell
+## 新功能
 
-仓库地址：<https://github.com/kanannaku/Aestitch-skill>
+| 功能 | 可以做 | 不能做 |
+|---|---|---|
+| `observe capture/report` | 使用真实 Chromium 截图，记录不同滚动位置、字体、元素大小和位置、交互控件概况 | 自动理解设计情绪、完整录制复杂动效或 WebGL 效果 |
+| `concept add/render/compare` | 存储独立 HTML 创意原型，检查两套方案是否只改了颜色/文案/细节 | 自己发明漂亮原型或判断哪套最好看 |
+| `fidelity` | 对比原型与实际实现的截图和 DOM 几何证据 | 代替人工验收交互和整体艺术效果 |
+| `guard --top-viewport` | 全页高度变化时，仍比较页面顶部同一视口 | 自动检查所有下方模块 |
+| `taste compare --relative-preference ... --acceptance ...` | 记录“两套都不满意，但 C 稍好”这类复杂反馈 | 根据一次选择永久定义用户风格 |
+
+v0.2 的 `reference`、`taste`、`contract`、`scope` 和旧视觉截图工具仍然保留。`.aestitch/` 默认由 Git 忽略，不上传个人截图或偏好。
+
+## Windows 更新步骤
+
+你已经在 `F:\Projects\Aestitch-skill` 安装过 v0.2，因此**不需要重新克隆**：
 
 ```powershell
-cd F:\Projects
-git clone https://github.com/kanannaku/Aestitch-skill.git
-cd .\Aestitch-skill
+cd F:\Projects\Aestitch-skill
+git pull --ff-only
 uv sync --extra all
 uv run python -m playwright install chromium
 uv run aestitch doctor
 ```
 
-请在目标网站项目下执行命令（将 `PATH_TO_AESTITCH` 替换为本地真实路径），例如：
+如果 C 组曾经**复制**了 Skill，则仍需手动同步其项目目录（请先检查有没有个人修改）：
 
 ```powershell
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py init
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py reference add --label "排版参考" --url "https://example.org" --focus typography --context homepage
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py reference list
-# 先参考实际返回的 ref-ID，再执行 taste compare
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py taste report
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py contract create --page home --goal "展示项目" --direction "编辑式构图" --scope "app/page.tsx"
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py contract show --page home
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py scope snapshot --tag homepage-v1
-# 修改文件后，检查范围：
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py scope check --tag homepage-v1 --allow app/page.tsx --max-added 0 --max-changed 2
+Copy-Item "F:\Projects\Aestitch-skill\skills\aestitch\*" `
+ "F:\Projects\aestitch-lab-c\.agents\skills\aestitch" -Recurse -Force
 ```
 
-在其他目录执行时，将 `--root F:\Projects\your-site` 放在子命令之前。请以 `--help` 和英文 README 为准查看完整参数。
+测试阶段继续只操作实验项目，不要直接改变正式 Suatlora 网站。
 
-## 重要限制
+## 实际浏览器截图（演示，不是审美评分）
 
-- URL 只作为参考记录；工具不会自动下载、复刻或分析网页。
-- 反馈只能代表当前用户在指定场景的选择；目前不具备自动风格学习能力。
-- Design Contract 依靠用户和 Agent 正确填写；`--user-confirmed` 只是操作者声明，不能代替真实授权。
-- Scope 检测只处理小于 2MB 的受支持源码文件及 package.json 依赖名称，不是代码质量评分，必须继续使用原有 lint/build/test。
-- `.aestitch/` 默认 Git 忽略，包含偏好、截图和设计契约；分享前请仔细审核隐私。
-- **不要在正式个人网站上直接冒险测试。** 先在独立小项目中验证效果，并遵循 [对照实验协议](examples/evaluation-protocol.md)。目前尚无 Aestitch 优于其他 Skill 的实验结果。
+| 空间研究网络 | 字体主导的实验性编辑页面 |
+|---|---|
+| ![空间实验](examples/creative-lab/preview-spatial.png) | ![编辑式实验](examples/creative-lab/preview-editorial.png) |
 
-完整流程参见 [SKILL.md](skills/aestitch/SKILL.md) 与 [English README](README.md)。
+这两个案例只是验证独立设计概念和采集管线。你可以都不喜欢，工具不会因此给你强加风格标签。
+
+## 先体验：两套原创原型
+
+仓库自带两份演示 HTML：一套深色的空间研究网络，一套暖色的实验性字体版面。它们只是用于验证流程的**原创演示作品**，不是应该套用到个人网站的固定设计模板。
+
+从 `F:\Projects\Aestitch-skill` 执行：
+
+```powershell
+uv run aestitch init
+uv run aestitch concept add --id spatial --title "Computational space" --thesis "Research as navigable space" --mechanism "Interactive research network" --html-file examples/creative-lab/computational-space.html
+uv run aestitch concept add --id editorial --title "Editorial object" --thesis "Research as printed notes" --mechanism "Oversized typography and resampling" --html-file examples/creative-lab/editorial-object.html
+uv run aestitch concept render --id spatial
+uv run aestitch concept render --id editorial
+uv run aestitch concept compare --left spatial --right editorial
+```
+
+截图保存在 `.aestitch/observations/concept-spatial/` 和 `.aestitch/observations/concept-editorial/`；比较结果在 `.aestitch/reports/`。注册时不会覆盖已有同名原型，想重新试请使用新的 ID。
+
+## 实际观察自己的 Next.js 网站
+
+先运行 Next.js 开发服务器，再用下列命令对**本地**页面采集证据（端口需换成你实际运行的端口）：
+
+```powershell
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id my-home --url http://127.0.0.1:3000 --viewport both --steps 3
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id my-home
+```
+
+外部站点只能在明确允许后使用 `--allow-remote`，且默认阻止其他主机的资源，因此 CDN、跨域字体、WebGL 素材可能缺失。对于 Psychoactive、Orchestrated 等复杂交互网站，仍需要浏览器里实际操作与录屏，不能靠静态截图谎称已经理解所有动效。
+
+## 下一步怎样使用
+
+让 Codex 阅读更新后的 `SKILL.md`，先保留旧 Field Notes，再独立创作至少两套**真正不同的首屏交互原型**，保存证据后交给你选择。用户没有满意之前，不允许自动批准设计契约，也不要直接扩建整站。成功运行、构图差异明显**不等于**审美优秀。
+
+更多命令和限制见 [English README](README.md)、[Agent Skill](skills/aestitch/SKILL.md) 和 [创意实验说明](examples/creative-lab/README.md)。

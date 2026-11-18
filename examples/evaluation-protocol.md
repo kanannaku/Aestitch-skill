@@ -1,24 +1,23 @@
-# Evaluating Aestitch against alternatives (planned benchmark protocol)
+# Aestitch evaluation protocol (proposed, not yet completed)
 
-This is a **protocol**, not measured evidence of superiority. Do not publish an unrun benchmark as a result.
+This document specifies experiments; it does **not** demonstrate higher design quality.
 
-## Controlled groups
+## Separate the questions
 
-- A: same coding agent, no design skill
-- B: same coding agent, a selected general front-end design skill
-- C: same coding agent, Aestitch v0.2 workflow + the same actual reference artifacts
+1. **Creative divergence:** same content and model, no Skill versus Aestitch versus an established front-end Skill. Are the independently rendered initial concepts structurally and experientially distinct? Compare blind screenshots, real interaction, and geometry; never rely on an LLM's own beauty score.
+2. **Reference observation:** did the agent actually inspect screenshots, mobile states, and key interaction states? Mark unavailable sites as unobserved, and separate evidence from agent hypothesis.
+3. **Preference discovery:** allow user to reject both but prefer one relatively. Test whether later recommendations align with held-out preferences, using multiple design tasks, not training/test on same examples.
+4. **Design-to-code handoff:** give agents the same approved prototype, screenshots, anchors and interaction spec. Measure missing elements, landmark mismatch, responsive behavior and semantic interactions; record what was intentionally changed.
+5. **Design guardian:** run several identical iteration tasks, compare preservation of locked decisions, number of user corrections, new dependencies/files and build/test stability.
 
-Use the same task content, initial source revision, dependencies, viewport sizes, and tool/time budget. If the groups are sequential, randomize task order and blind the reviewer to group labels. Save the model/tool versions and prompts.
+## Run controls
 
-## Tasks and metrics
+Record model/version, thinking effort, original code revision, tools, time/token budget, task, reference assets, screenshots (both viewports), acceptance/relative preference, design revision counts, scope report and failures. Blind the user to experimental group when possible. Repeat on more than one task and user before generalizing.
 
-1. Preference discovery: collect 3–5 contextual A/B choices; evaluate predictions on **held-out** tasks by human choice, not model self-rating.
-2. Reference reconstruction (on owned/authorized designs): screenshot comparison plus layout/text/asset fidelity and manual responsive/interactivity review.
-3. Five changes to the same page: preservation of approved decisions, subjective preference in a blind review, number of corrections.
-4. Code change control: unexpected file/dep changes, warnings, build/test results, token cost and time used.
+## Ratings and provenance
 
-Pixel difference is a change metric, **not** a beauty metric. Record failures and do not cherry-pick screenshots. Include limits such as user subjectivity, order effects, dynamic content, unstable fonts and differing model strengths.
-
-## Suggested record format
-
-Store one JSON per independent run using fields: `task_id`, `group`, `model_version`, `prompt_revision`, `initial_commit`, `artifact_paths`, `user_preference`, `revisions`, `build_passed`, `scope_review_reasons`, `time_seconds`, `notes`. Only publish materials with permission.
+- The CLI records geometry and pixel change, **not art direction quality**.
+- User opinions may conflict across content types; preserve context.
+- A successful interactive prototype does not mean that the overall aesthetic is approved.
+- Do not cherry-pick screenshots or hide the cost of manual intervention.
+- Only publish images, recordings, designs or page sources with proper permission.

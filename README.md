@@ -1,80 +1,109 @@
 # Aestitch
 
-**Discover your taste. Translate inspiration. Preserve design intent.**  
-*Local-first design intelligence for coding agents · by Suatlora*
+**Discover your taste. Explore real art directions. Preserve design intent.**  
+*Evidence-first design intelligence for coding agents · by Suatlora*
 
-> **v0.2.0 early preview.** Runnable CLI + portable `SKILL.md`, not an autonomous design model. It does not browse reference URLs, judge beauty, learn visual features from pixels or guarantee that generated code reproduces screenshots.
+> **v0.3.0 preview:** Aestitch is a portable Agent Skill and a local Python CLI. It is **not** an autonomous aesthetic model: a human or vision-enabled agent must still interpret reference material, create concepts and judge the designs. It does not promise award-winning UI from a prompt.
 
-AI coding agents can make a page work while losing its visual intent across iterations. Aestitch helps preserve **explicit user decisions**, **reference provenance**, **cross-model design contracts**, and **browser/code change evidence**. It intentionally permits multiple stylistic preferences depending on context.
+## Why it exists
 
-## What works
+Vibe coding can create maintainable web pages that still feel generic. Adding more reference links or prohibitions is often not enough: an agent can lose the original visual ideas during **reference observation → art direction → prototype → code handoff**. Aestitch makes those steps explicit and testable, while retaining the memory and code-change controls introduced in v0.2.
 
-| Workflow | Commands | Actual behavior |
+## What works in v0.3
+
+| Capability | CLI commands | What it really does |
 |---|---|---|
-| Personal taste | `record`, `brief`, `taste compare/report` | Stores explicit contextual choices including `both`, `neither`, `unsure`; no implicit taste inference |
-| Reference library | `reference add/list` | Records URLs without fetching; copies trusted local image references privately |
-| Design handoff | `contract create/show/approve` | JSON design contracts + human-readable Markdown; explicit confirmation flag + in-project image hash required for approval |
-| Visual evidence | `capture`, `guard` | Playwright browser desktop/mobile captures and Pillow image differences; not aesthetic quality scores |
-| Change budget | `scope snapshot/check` | Detects changed/add/removed source files, out-of-scope paths, new JS package dependency names; review flags, not code metrics |
-| Tooling | `doctor` | Reports optional dependencies |
+| Reference Observatory | `observe capture/report` | Visits a **trusted, explicitly supplied** localhost/remote URL or renders a local offline HTML file; saves viewport screenshots, scroll frames, DOM element geometry and computed font/color facts. Remote visits require `--allow-remote`; same-host-only requests can cause missing assets. |
+| Art Direction Lab | `concept add/render/compare` | Stores independently **authored** HTML prototypes, renders desktop/mobile, flags identical prototypes, repeated mechanisms and near-identical landmark geometry. Does not invent designs or rate beauty. |
+| Visual handoff | `fidelity` | Compares one prototype's screenshot and anchors to a separately observed implementation at the same viewport. Reports differences, not implementation correctness or aesthetic quality. |
+| Region-aware visual guard | `guard --top-viewport` | Compares first viewport of full-page screenshots even if page heights differ. Does not compare lower sections. |
+| Contextual taste | `taste compare/report` | Can separately record **absolute acceptance** and **relative preference** (e.g. "neither accepted, but B is more refined"). No automatic style inference. |
+| Existing controls | `reference`, `record`, `brief`, `contract`, `scope`, `capture`, `doctor` | Local reference metadata, explicit preference memory, draft/approved design contracts, source-change budgets and screenshot baselines. |
 
-All project state defaults to `<project>/.aestitch/`, with a nested `.gitignore`. No external model API, sign-up or telemetry. Aestitch does not change website source by itself.
+All project evidence is kept in `<target-project>/.aestitch/` and ignored by git by default. No login, external model API, vector database or telemetry is required. Aestitch itself does not modify the website source.
 
-## Install
+## Install / update (Windows PowerShell)
 
-Python 3.10+ is required. Optional Playwright and Pillow provide screenshots/diffs. From **this repository**:
+**Existing users (v0.2)** should pull new code rather than reclone the repository:
 
 ```powershell
+cd F:\Projects\Aestitch-skill
+git pull --ff-only
 uv sync --extra all
 uv run python -m playwright install chromium
 uv run aestitch doctor
 ```
 
-Or run the script without packaging: `python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py --root F:\Projects\example init` (first `pip install pillow playwright` only if you need visual operations).
-
-## Reproducible end-to-end example
-
-Run commands from **the target website project root**, with the Aestitch CLI accessible as `aestitch` (or prefix each command with `python PATH_TO_AESTITCH/.../aestitch.py`).
+If a Codex project has **a copied project-level Skill**, update that copy after verifying any local modifications:
 
 ```powershell
-aestitch init
-# Metadata only; URL is not fetched or visually analyzed
- aestitch reference add --label "Editorial source" --url "https://example.org" --focus typography --context homepage
- aestitch reference add --label "My screenshot" --image ".\approved-capture.png" --focus composition
- aestitch reference list
-# Use the returned reference IDs instead of placeholders.
- aestitch taste compare --left ref-FIRST --right ref-SECOND --choice both --why "Each suits a different module" --context homepage
- aestitch taste report
- aestitch contract create --page home --goal "Present my work" --direction "Editorial, deliberate, cinematic" --scope "app/page.tsx" --reference ref-FIRST
- aestitch contract show --page home
-# Only after the user explicitly accepts a real, local prototype image:
- aestitch contract approve --page home --evidence ".\approved-capture.png" --note "User approved this composition" --user-confirmed
- aestitch scope snapshot --tag home-redesign
-# Start the project's dev server, capture original before edits:
- aestitch capture --url http://127.0.0.1:3000 --tag baseline
-# Implement scoped changes, run tests, then:
- aestitch capture --url http://127.0.0.1:3000 --tag candidate
- aestitch guard
- aestitch scope check --tag home-redesign --allow app/page.tsx --max-added 0 --max-changed 2 --max-deleted 0 --max-dependencies 0
+# Example: C group; do not overwrite hand-edited Skill files without reviewing them.
+Copy-Item "F:\Projects\Aestitch-skill\skills\aestitch\*" `
+  "F:\Projects\aestitch-lab-c\.agents\skills\aestitch" -Recurse -Force
 ```
 
-**Important:** `--root` is a top-level argument and goes **before** `reference`, `contract`, etc. Use distinct snapshot tags per task. Screenshot baseline overwrites require explicit `--overwrite-baseline`. `scope snapshot` overwrites require `--overwrite`.
+If you have not cloned yet, clone `https://github.com/kanannaku/Aestitch-skill` first. Python >=3.10 is required. Playwright/Chromium supports browser capture; Pillow supports image evidence. You can run `uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\YOUR-PROJECT ...` from anywhere. **The `--root` flag comes before the subcommand.**
 
-## Skill usage
+## What the demo actually renders
 
-Add `skills/aestitch` to your coding agent's project-specific Skill directory (`.agents/skills/aestitch` for compatible clients; actual discovery path is agent-specific). Its instructions require: observe → compare user taste → write draft contract → get explicit approval → capture/implement under change scope → review browser/code evidence → record decisions.
+These are real Chromium screenshots of two **small, original, self-contained concepts**, not AI beauty predictions. They intentionally vary their mechanism and composition; a user may reject both.
 
-See [taste discovery](skills/aestitch/references/taste-discovery.md), [handoff and complexity](skills/aestitch/references/handoff-and-complexity.md), [security limitations](skills/aestitch/references/evidence-and-safety.md) and [benchmark protocol](examples/evaluation-protocol.md).
+| Computational space (spatial research) | Editorial object (typography-first) |
+|---|---|
+| ![Dark spatial graph prototype screenshot](examples/creative-lab/preview-spatial.png) | ![Warm editorial prototype screenshot](examples/creative-lab/preview-editorial.png) |
 
-## What is NOT implemented
+## Quick experiment — original creative directions
 
-No automatic reference-page ingestion or screenshot semantic analysis; no preference predictor, vector database, RAG retrieval, aesthetic scoring, full static-analysis complexity detector, model orchestration or completed independent performance benchmark. Reference and taste workflows require actual user and agent reasoning. Visual evidence is for **review**, not automatic accept/reject.
+Aestitch ships two **demonstration prototypes** that intentionally use different mechanisms, not just different colors. They are examples to exercise its evidence pipeline; they are not recommended UI templates.
 
-## Develop and test
+From the Aestitch repository directory:
 
 ```powershell
-python -m unittest discover -s tests -v
-python skills/aestitch/scripts/aestitch.py --help
+uv run aestitch init
+uv run aestitch concept add --id spatial --title "Computational space" --thesis "Research as navigable space" --mechanism "Interactive node graph" --html-file examples/creative-lab/computational-space.html
+uv run aestitch concept add --id editorial --title "Editorial object" --thesis "Research as a printed object" --mechanism "Oversized typography and sampling" --html-file examples/creative-lab/editorial-object.html
+uv run aestitch concept render --id spatial
+uv run aestitch concept render --id editorial
+uv run aestitch concept compare --left spatial --right editorial
 ```
 
-MIT license. The source can be used independently of the Suatlora personal website. Do not share personal screenshots or reference materials without permission.
+Outputs: `.aestitch/observations/concept-spatial/`, `.aestitch/observations/concept-editorial/` and `.aestitch/reports/concept-spatial-vs-editorial-desktop.json`. If running again, use a new concept ID; registration never overwrites an earlier idea.
+
+## Observe an actual web page
+
+From a **target website project** whose dev server you have started on localhost:
+
+```powershell
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id my-home --url http://127.0.0.1:3000 --viewport both --steps 3
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id my-home
+```
+
+Only explicitly trusted external references may be sampled with `--allow-remote`, and resource restrictions can result in incomplete rendering. A complex WebGL/scroll/hover site still needs a **manual browser interaction and recording**; the CLI captures static frames and computed CSS/geometry, **not the whole experience**. A metadata-only `reference add --url` command never visits the page.
+
+## Compare design handoff
+
+After you create/choose a prototype and implement it in Next.js, observe the real implementation at the **same viewport**:
+
+```powershell
+uv run aestitch observe capture --id implemented-home --url http://127.0.0.1:3000 --viewport both --steps 1
+uv run aestitch fidelity --concept spatial --observation implemented-home --viewport desktop
+uv run aestitch fidelity --concept spatial --observation implemented-home --viewport mobile
+# Existing baseline/candidate flow; use if full-page heights differ:
+uv run aestitch guard --top-viewport
+```
+
+Use the first three commands only after registering and rendering a `spatial` concept in the **same target project**. Pixel and geometry differences do not establish aesthetic fidelity; judge the actual interactive page and explain deviations against an approved design contract. A draft is not approved.
+
+## Architecture and trust
+
+- Portable Skill: [`skills/aestitch/SKILL.md`](skills/aestitch/SKILL.md) and on-demand references.
+- CLI modules: `aestitch.py` (commands, existing memory/guard), `aestitch_workflows.py` (memory, references, contracts and scope) and `aestitch_creative.py` (observations, concepts, fidelity).
+- Web pages and supplied HTML are **untrusted**. Browser capture blocks all external subresources for offline files, and only permits same-host requests for live pages. Inline JS in supplied HTML can still run; use trusted material only.
+- Design contracts require explicit user confirmation before marking approved. A CLI flag cannot independently verify human consent.
+- The CLI cannot infer personal taste, inspect hidden animations or audio, automatically extract design meaning from screenshots, create original artwork, measure an aesthetic score or prove superiority over other Skills.
+
+## Evaluation and evidence
+
+Run `python -m unittest discover -s tests -v`. Optional real Chromium integration requires `AESTITCH_TEST_CHROMIUM=1` and a Playwright Chromium installation (or an explicit `AESTITCH_CHROMIUM_EXECUTABLE`). See [evaluation protocol](examples/evaluation-protocol.md). An earlier A/C experiment showed visual constraints alone did not produce a distinctive art direction; no formal benchmark of v0.3 aesthetic quality has been completed.
+
+See [中文文档](README.zh-CN.md), [creative demo](examples/creative-lab/README.md) and [visual observation rules](skills/aestitch/references/observation-evidence.md).
