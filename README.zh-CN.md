@@ -11,6 +11,8 @@ Aestitch 是面向 Codex、Claude Code 等编码 Agent 的个人化设计记忆�
 
 ## Windows / PowerShell 使用
 
+如果用 uv，可先在 Aestitch 仓库执行 `uv sync --extra all`，再执行 `uv run python -m playwright install chromium`；该虚拟环境默认位于仓库内。下面也提供普通 Python 安装方式。
+
 请在你的网站项目根目录打开终端，用真正的 Aestitch 路径替换以下的 `PATH_TO_AESTITCH`：
 
 ```powershell
