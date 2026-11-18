@@ -37,7 +37,7 @@ python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py capture --url http:/
 python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py guard
 ```
 
-For an offline HTML prototype inside the target project, replace `--url ...` with `--html-file .\prototype.html`. Only self-contained inline CSS/resources are reliable in offline mode.
+For an offline HTML prototype inside the target project, replace `--url ...` with `--html-file .\prototype.html`. Offline mode blocks page-initiated network requests; use self-contained inline styles and resources.
 
 You can also pass `--root F:\Projects\your-website` **before** the subcommand when running the script from another directory. If you have a system Chromium installed, you can set `AESTITCH_CHROMIUM_EXECUTABLE` to its full executable path as an alternative to downloading Playwright Chromium. Browser capture is restricted to localhost unless `--allow-remote` is explicitly provided; do not run it on unfamiliar websites.
 

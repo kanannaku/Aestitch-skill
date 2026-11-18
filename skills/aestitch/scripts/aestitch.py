@@ -181,7 +181,9 @@ def capture(root: Path, url: str | None, html_file: str | None, tag: str, viewpo
                 page.on("console", lambda msg: console_errors.append(msg.text[:300]) if msg.type == "error" else None)
                 try:
                     if html_file:
-                        # Offline prototype mode; only inline styles/resources are reliable.
+                        # Offline prototype mode: block all page-initiated requests.
+                        # Only inline/data resources are supported; avoid leaking URLs.
+                        page.route("**/*", lambda route: route.abort())
                         response = None
                         page.set_content(validate_html_file(root, html_file).read_text(encoding="utf-8"),
                                          wait_until="domcontentloaded", timeout=20000)
