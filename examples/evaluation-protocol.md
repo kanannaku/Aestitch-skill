@@ -21,3 +21,20 @@ Record model/version, thinking effort, original code revision, tools, time/token
 - A successful interactive prototype does not mean that the overall aesthetic is approved.
 - Do not cherry-pick screenshots or hide the cost of manual intervention.
 - Only publish images, recordings, designs or page sources with proper permission.
+
+
+## Two-role experiment handoff
+
+**Canonical Skill maintainer:** reads evidence, judges which shortcomings are supported, changes Skill source, runs regression and publishes. **Local test Agent:** runs the assigned controlled test in an isolated worktree and returns reproducible evidence. These roles must not be conflated; the test website is an instrument, not the product.
+
+Use `aestitch experiment record` to register a test with Agent/model/Skill version, task, reported outcome and existing local artifacts. `aestitch experiment report` includes file integrity hashes and an explicitly unreviewed user verdict until feedback is supplied. The user can forward the packet and screenshot files to the maintainer. `experiment review` requires explicit user confirmation and preserves first confirmed review instead of silently rewriting it.
+
+### Minimal evaluation decision
+
+1. **Evidence incomplete:** screenshot, interaction state or task constraints missing; ask local Agent for specific evidence rather than invent a design diagnosis.
+2. **Engineering issue:** errors, regression, responsiveness or inaccessible interaction demonstrably failed.
+3. **Creative direction issue:** user explicitly rejects both despite successful code tests; return to macro exploration, don't convert a relative preference into approval.
+4. **Skill issue hypothesis:** failure repeated under comparable controls and sourced to a concrete Skill instruction or missing process. Improve that instruction and run a follow-up controlled comparison.
+5. **Unresolved attribution:** model ability, poor reference access, coding environment, time budget or Skill may be responsible. Avoid causal claims without controls.
+
+Use the user's exact feedback, including `neither` or `unsure`; geometric divergence cannot stand in for aesthetic approval. Do not auto-copy experiment artifacts to GitHub or promote them into global taste memories.

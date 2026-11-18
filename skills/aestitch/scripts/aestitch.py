@@ -485,6 +485,26 @@ def make_parser() -> argparse.ArgumentParser:
     fidelity.add_argument("--viewport", choices=("desktop", "mobile"), default="desktop")
     fidelity.add_argument("--pixel-threshold", type=int, default=24)
 
+    exp = sub.add_parser("experiment", help="Capture local Agent test evidence for Skill maintainer review")
+    exp_actions = exp.add_subparsers(dest="experiment_action", required=True)
+    ep = exp_actions.add_parser("record")
+    ep.add_argument("--id", required=True)
+    ep.add_argument("--agent", required=True)
+    ep.add_argument("--model", required=True)
+    ep.add_argument("--task", required=True)
+    ep.add_argument("--result", required=True, help="Agent-reported outcome; not a quality verdict")
+    ep.add_argument("--artifact", action="append", default=[], help="Existing local path within --root; repeatable")
+    ep.add_argument("--skill-version", default="")
+    ep.add_argument("--comparison", default="", help="Baseline or experimental group context")
+    ep = exp_actions.add_parser("review")
+    ep.add_argument("--id", required=True)
+    ep.add_argument("--acceptance", required=True, choices=("neither", "left", "right", "both", "unsure"))
+    ep.add_argument("--relative-preference", choices=("unknown", "left", "right", "equal"), default="unknown")
+    ep.add_argument("--comment", required=True, help="Exact user feedback; do not invent")
+    ep.add_argument("--user-confirmed", action="store_true")
+    ep = exp_actions.add_parser("report")
+    ep.add_argument("--id", required=True)
+
     sub.add_parser("doctor", help="Check optional dependencies")
     return parser
 
@@ -576,6 +596,21 @@ def main(argv: list[str] | None = None) -> int:
                 result = fidelity_compare(root, args.concept, args.observation,
                                           args.viewport, args.pixel_threshold)
                 print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "experiment":
+            from aestitch_experiments import record_experiment, review_experiment, experiment_report
+            if args.experiment_action == "record":
+                item = record_experiment(root, args.id, args.agent, args.model,
+                                         args.task, args.result, args.artifact,
+                                         args.skill_version, args.comparison)
+                print(f"Recorded local experiment {item['id']}; review remains unconfirmed")
+            elif args.experiment_action == "review":
+                item = review_experiment(root, args.id, args.acceptance,
+                                         args.relative_preference, args.comment,
+                                         args.user_confirmed)
+                print(f"Recorded explicit user review for {item['id']}")
+            else:
+                print(experiment_report(root, args.id))
             return 0
         if args.command == "doctor":
             return doctor()

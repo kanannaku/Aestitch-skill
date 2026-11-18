@@ -33,6 +33,14 @@ metadata:
 4. Show the actual rendered prototypes to the user; ask which is worth exploring, what feels wrong, or whether neither works. If none is accepted, create a genuinely new art direction; do not treat rejected concepts as approved.
 5. Only after explicit acceptance, create or approve a **Design Contract** backed by the exact local screenshot/prototype (`contract approve --user-confirmed` only when the user really confirmed it). A draft cannot be treated as approved. See [creative direction](references/creative-direction.md).
 
+## Experiment handoff: local Agent tests, Skill maintainer improves the product
+
+Aestitch Skill development and test website development are **different responsibilities**. The user's chosen Skill maintainer analyzes feedback and edits the canonical Skill repository. Local coding Agents (Codex, Claude Code, DeepSeek, etc.) execute **test cases** in isolated workspaces, gather browser evidence, and return reports. **Do not quietly turn a test website into the product roadmap.** Do not request the local Agent to rewrite the Skill unless the user explicitly delegates Skill development to it.
+
+After a local test, run `experiment record` with the Agent/model, task, reported outcome and existing screenshots/JSON reports; then `experiment report` to generate a portable Markdown handoff. Paths must remain inside the test workspace and are hash-checked; nothing is uploaded. The user may send screenshots and the packet to the Skill maintainer. Only confirmed user words may be recorded with `experiment review --user-confirmed`; no review is implied by an Agent's test success. The packet never changes `profile.json`, concept approval or design contracts.
+
+Always distinguish **test execution passed**, **measurable interaction/geometry differences**, **human aesthetic acceptance** and **inference about the Skill**. See [experiment evaluation protocol](../../examples/evaluation-protocol.md).
+
 ## Implement and protect the design
 
 1. Before changes: `scope snapshot` and optional baseline `capture`. Define allowed files and a justified complexity budget; avoid unnecessary dependencies or duplicated components.
@@ -65,6 +73,17 @@ aestitch observe capture --id implemented-home --url http://127.0.0.1:3000 --vie
 aestitch fidelity --concept direction-one --observation implemented-home --viewport desktop
 # The original design memory, contracts, scopes and visual guard remain available.
 ```
+
+## Hand off a finished experiment
+
+```bash
+aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version 0.3.0 --task "Explore two distinct BFS interfaces" --result "Two prototypes rendered; both remain unapproved" --artifact prototypes/search-field.html --artifact prototypes/before-arrival.html --comparison "C group; previously compared against A"
+aestitch experiment report --id creative-01
+# Only after user supplied feedback:
+# aestitch experiment review --id creative-01 --acceptance neither --relative-preference left --comment "Both insufficient; left slightly clearer" --user-confirmed
+```
+
+The Skill maintainer reviews evidence and updates the canonical GitHub repo; local Agents **only** generate the experiment output unless independently authorized. Neither code-test success nor geometric divergence is an aesthetic score.
 
 ## Boundaries and limitations
 

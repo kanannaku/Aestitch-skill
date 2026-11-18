@@ -82,3 +82,18 @@ uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch
 让 Codex 阅读更新后的 `SKILL.md`，先保留旧 Field Notes，再独立创作至少两套**真正不同的首屏交互原型**，保存证据后交给你选择。用户没有满意之前，不允许自动批准设计契约，也不要直接扩建整站。成功运行、构图差异明显**不等于**审美优秀。
 
 更多命令和限制见 [English README](README.md)、[Agent Skill](skills/aestitch/SKILL.md) 和 [创意实验说明](examples/creative-lab/README.md)。
+
+
+## 谁负责改 Skill？谁负责做实验？
+
+Aestitch 的**正式源码只维护在本仓库**。开发者/Skill 维护者负责读取实验结论、修改 GitHub 源码、回归测试和发布；用户本地运行的 Codex、Claude Code、DeepSeek 等 Agent 只负责在隔离实验环境中制作原型、采集截图和记录测试结果。实验网页不是本产品，不应该长期偏离 Skill 开发主线。
+
+v0.3 增加了`experiment` 交接命令，用于把本地 AI 的运行结果整理成可交给维护者检查的证据包。文件不被上传，记录放在目标实验的 `.aestitch/experiments/` 目录。
+
+```powershell
+# 在实验项目根目录运行；只登记已经存在的本地证据
+uv run --project F:\Projects\Aestitch-skill aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version "0.3.0" --task "BFS 两种原创交互方案" --result "两套可运行原型；尚待用户评审" --artifact "prototypes/search-field.html" --artifact "prototypes/before-arrival.html"
+uv run --project F:\Projects\Aestitch-skill aestitch experiment report --id creative-01
+```
+
+注意：上述命令的工作目录必须是**实际包含原型的实验项目**。如果原型还没被用户接受，就保持 `unreviewed`，不要伪造 `review`、不要自动批准 Design Contract，也不要在实验仓库修改正式 Skill。
