@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 AXES = ("composition", "typography", "color", "motion", "interaction", "content", "other")
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
 TAGS = ("baseline", "candidate")
@@ -356,7 +357,7 @@ def doctor() -> int:
     chromium = os.environ.get("AESTITCH_CHROMIUM_EXECUTABLE")
     if chromium:
         print(f"Chromium override: {'available' if Path(chromium).is_file() else 'missing'} ({chromium})")
-    elif __import__("importlib").util.find_spec("playwright"):
+    elif importlib.util.find_spec("playwright"):
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             print(f"Playwright Chromium: {'available' if Path(pw.chromium.executable_path).is_file() else 'missing (run python -m playwright install chromium)'}")
@@ -494,13 +495,23 @@ def make_parser() -> argparse.ArgumentParser:
     ep.add_argument("--task", required=True)
     ep.add_argument("--result", required=True, help="Agent-reported outcome; not a quality verdict")
     ep.add_argument("--artifact", action="append", default=[], help="Existing local path within --root; repeatable")
+    ep.add_argument("--evidence", action="append", default=[], help="Existing local evidence path; pair with --evidence-class")
+    ep.add_argument("--evidence-class", action="append", default=[],
+                    choices=("observed", "measured", "inferred", "unverified"),
+                    help="Evidence class for the matching --evidence path, in order. "
+                         "user_confirmed is recorded only through `experiment review`")
     ep.add_argument("--skill-version", default="")
+    ep.add_argument("--skill-commit", default="", help="Aestitch commit used for this experiment")
     ep.add_argument("--comparison", default="", help="Baseline or experimental group context")
     ep = exp_actions.add_parser("review")
     ep.add_argument("--id", required=True)
     ep.add_argument("--acceptance", required=True, choices=("neither", "left", "right", "both", "unsure"))
     ep.add_argument("--relative-preference", choices=("unknown", "left", "right", "equal"), default="unknown")
     ep.add_argument("--comment", required=True, help="Exact user feedback; do not invent")
+    ep.add_argument("--source", choices=("user_direct", "agent_relayed", "unknown"),
+                    default="unknown",
+                    help="How the feedback reached the agent; unknown is reported honestly")
+    ep.add_argument("--context", default="", help="Where/how the user gave this feedback")
     ep.add_argument("--user-confirmed", action="store_true")
     ep = exp_actions.add_parser("report")
     ep.add_argument("--id", required=True)
@@ -600,14 +611,25 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "experiment":
             from aestitch_experiments import record_experiment, review_experiment, experiment_report
             if args.experiment_action == "record":
+                if args.artifact and args.evidence:
+                    raise ValueError("Use --artifact or --evidence, not both")
+                if args.evidence and len(args.evidence) != len(args.evidence_class):
+                    raise ValueError("Provide one --evidence-class for each --evidence path, in order")
+                if args.evidence_class and not args.evidence:
+                    raise ValueError("--evidence-class requires at least one --evidence path")
+                evidence = [{"path": path, "class": kind}
+                            for path, kind in zip(args.evidence, args.evidence_class)]
                 item = record_experiment(root, args.id, args.agent, args.model,
                                          args.task, args.result, args.artifact,
-                                         args.skill_version, args.comparison)
+                                         args.skill_version, args.comparison,
+                                         skill_commit=args.skill_commit,
+                                         evidence=evidence if evidence else None)
                 print(f"Recorded local experiment {item['id']}; review remains unconfirmed")
             elif args.experiment_action == "review":
                 item = review_experiment(root, args.id, args.acceptance,
                                          args.relative_preference, args.comment,
-                                         args.user_confirmed)
+                                         args.user_confirmed, source=args.source,
+                                         context=args.context)
                 print(f"Recorded explicit user review for {item['id']}")
             else:
                 print(experiment_report(root, args.id))

@@ -2,7 +2,7 @@
 
 **发现审美，探索真正不同的创意方向，并减少从设计到代码的表达损失。**
 
-> **v0.3.0 预览版**：这是一套 Agent Skill + 本地 Python 工具。它不会自动变成艺术总监，也不会凭网站链接直接生成优秀的原创设计。它提供真实页面采集、视觉原型对照和跨模型交接证据，让 Codex 等 Agent 的设计工作可以被观察与验证。
+> **v0.3.1 预览版**：这是一套 Agent Skill + 本地 Python 工具。它不会自动变成艺术总监，也不会凭网站链接直接生成优秀的原创设计。它提供真实页面采集、视觉原型对照和跨模型交接证据，让 Codex 等 Agent 的设计工作可以被观察与验证。v0.3.1 是可靠性补丁；v0.4 Creative Guidance 目前只是协议草案，尚未成为 CLI 功能。
 
 ## 为什么改版？
 
@@ -12,11 +12,12 @@
 
 | 功能 | 可以做 | 不能做 |
 |---|---|---|
-| `observe capture/report` | 使用真实 Chromium 截图，记录不同滚动位置、字体、元素大小和位置、交互控件概况 | 自动理解设计情绪、完整录制复杂动效或 WebGL 效果 |
-| `concept add/render/compare` | 存储独立 HTML 创意原型，检查两套方案是否只改了颜色/文案/细节 | 自己发明漂亮原型或判断哪套最好看 |
+| `observe capture/report` | 使用真实 Chromium 截图，记录不同滚动位置、字体、元素大小和位置、交互控件概况；新 manifest 明确记录采集上下文和证据范围 | 自动理解设计情绪、完整录制复杂动效或 WebGL 效果 |
+| `concept add/render/compare` | 存储独立 HTML 创意原型，检查两套方案是否只改了颜色/文案/细节；重复渲染保留历史 observation，不默认覆盖 | 自己发明漂亮原型或判断哪套最好看 |
 | `fidelity` | 对比原型与实际实现的截图和 DOM 几何证据 | 代替人工验收交互和整体艺术效果 |
 | `guard --top-viewport` | 全页高度变化时，仍比较页面顶部同一视口 | 自动检查所有下方模块 |
 | `taste compare --relative-preference ... --acceptance ...` | 记录“两套都不满意，但 C 稍好”这类复杂反馈 | 根据一次选择永久定义用户风格 |
+| `experiment record/review/report` | 登记本地证据路径、哈希、证据类别和 Skill commit；Agent 声称与用户确认分开 | 上传文件、自动批准设计或代替用户评审 |
 
 v0.2 的 `reference`、`taste`、`contract`、`scope` 和旧视觉截图工具仍然保留。`.aestitch/` 默认由 Git 忽略，不上传个人截图或偏好。
 
@@ -40,6 +41,25 @@ Copy-Item "F:\Projects\Aestitch-skill\skills\aestitch\*" `
 ```
 
 测试阶段继续只操作实验项目，不要直接改变正式 Suatlora 网站。
+
+### Agent 从哪里发现这个 Skill？
+
+正式源码是 `F:\Projects\Aestitch-skill\skills\aestitch`。需要把它复制或链接到 Agent 实际读取的位置：
+
+| Agent | 常见位置 |
+|---|---|
+| Claude Code（用户级） | `C:\Users\<你>\.claude\skills\aestitch` |
+| Claude Code（项目级） | `<项目>\.claude\skills\aestitch` |
+| Codex（项目级，本工作区用法） | `<项目>\.agents\skills\aestitch` |
+
+```powershell
+# Claude Code 用户级：优先用符号链接，更新源码后立即生效
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+New-Item -ItemType SymbolicLink -Path "$HOME\.claude\skills\aestitch" `
+  -Target "F:\Projects\Aestitch-skill\skills\aestitch"
+```
+
+复制到 Codex 项目前先检查是否有本地修改；不要盲目覆盖。
 
 ## 实际浏览器截图（演示，不是审美评分）
 
@@ -92,8 +112,8 @@ v0.3 增加了`experiment` 交接命令，用于把本地 AI 的运行结果整�
 
 ```powershell
 # 在实验项目根目录运行；只登记已经存在的本地证据
-uv run --project F:\Projects\Aestitch-skill aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version "0.3.0" --task "BFS 两种原创交互方案" --result "两套可运行原型；尚待用户评审" --artifact "prototypes/search-field.html" --artifact "prototypes/before-arrival.html"
+uv run --project F:\Projects\Aestitch-skill aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version "0.3.1" --skill-commit "ec83d616" --task "BFS 两种原创交互方案" --result "两套可运行原型；尚待用户评审" --evidence "prototypes/search-field.html" --evidence-class observed --evidence "reports/interaction.json" --evidence-class measured
 uv run --project F:\Projects\Aestitch-skill aestitch experiment report --id creative-01
 ```
 
-注意：上述命令的工作目录必须是**实际包含原型的实验项目**。如果原型还没被用户接受，就保持 `unreviewed`，不要伪造 `review`、不要自动批准 Design Contract，也不要在实验仓库修改正式 Skill。
+注意：上述命令的工作目录必须是**实际包含原型的实验项目**。如果原型还没被用户接受，就保持 `unreviewed`，不要伪造 `review`、不要自动批准 Design Contract，也不要在实验仓库修改正式 Skill。`experiment record` 只接受 `observed` / `measured` / `inferred` / `unverified`；`user_confirmed` 只能由 `experiment review` 记录，并会同时记录来源（`user_direct` / `agent_relayed` / `unknown`）与上下文。报告会把 Skill commit 和证据类别标为“声明值”，并始终写明 `Identity verified: no`。`--user-confirmed` 是流程护栏，不是身份认证；旧 packet 缺少 `skill_commit`/`evidence[]` 时仍可读取，并显示为 `not recorded` / `legacy artifact`。读取报告时会重新校验证据路径：绝对路径、`..` 越界和指向项目外的符号链接都标记为 `invalid_path`，不会读取；文件状态分为 `present` / `missing` / `changed` / `unreadable` / `invalid_path`。

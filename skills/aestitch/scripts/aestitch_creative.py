@@ -6,13 +6,16 @@ performed here: geometry/pixel differences are observations, never beauty scores
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from hashlib import sha1
 import ipaddress
 import json
 import os
 from pathlib import Path
 import shutil
-from typing import Any
+import time
+from typing import Any, Iterator
 from urllib.parse import urlsplit
 
 from aestitch_workflows import digest, list_references, load, save, slug, state_dir
@@ -20,6 +23,55 @@ from aestitch_workflows import digest, list_references, load, save, slug, state_
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
 MAX_STEPS = 5
 MAX_HTML_BYTES = 2 * 1024 * 1024
+STATIC_EVIDENCE_SCOPE = ["static_layout", "scroll_positions"]
+NOT_OBSERVED_STATES = ["interaction", "motion", "hover", "focus", "keyboard"]
+# A crashed process must not block a concept forever. Locks older than this are
+# considered abandoned and removed; anything inside the window is a hard conflict.
+LOCK_STALE_SECONDS = 15 * 60
+LOCK_RETRY_ATTEMPTS = 3
+
+
+@contextmanager
+def _concept_write_lock(concept_dir: Path) -> Iterator[None]:
+    """Cross-process single-writer lock for one Concept directory.
+
+    Uses an atomic exclusive create so two Claude Code processes cannot render the
+    same Concept simultaneously. There is no wait queue: a concurrent caller fails
+    clearly instead of silently overwriting evidence.
+    """
+    lock_path = concept_dir / ".render.lock"
+    fd = None
+    for attempt in range(LOCK_RETRY_ATTEMPTS):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except OSError:
+                age = 0.0
+            if age > LOCK_STALE_SECONDS and attempt == 0:
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
+                continue
+            raise ValueError("Concept is already being rendered by another process; "
+                             "retry after it finishes (stale locks expire after 15 minutes)")
+        else:
+            break
+    if fd is None:
+        raise ValueError("Could not acquire the concept render lock; another process holds it")
+    try:
+        os.write(fd, f"pid={os.getpid()}\nstarted={time.time()}\n".encode("utf-8"))
+        yield
+    finally:
+        try:
+            os.close(fd)
+        finally:
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
 
 
 def _local_url(url: str, allow_remote: bool) -> str:
@@ -106,8 +158,12 @@ def _capture_one(page: Any, dest: Path, steps: int) -> dict[str, Any]:
 
 def observe(root: Path, obs_id: str, url: str | None, html_file: str | None,
             viewport: str, steps: int, allow_remote: bool = False, reference: str = "",
-            overwrite: bool = False) -> dict[str, Any]:
-    """Capture browser-rendered evidence. URLs are never fetched without this command."""
+            overwrite: bool = False, claim: bool = False) -> dict[str, Any]:
+    """Capture browser-rendered evidence. URLs are never fetched without this command.
+
+    With claim=True the observation directory is reserved atomically before capture;
+    a concurrent reservation fails instead of writing into the same evidence folder.
+    """
     state = state_dir(root)
     obs_id = slug(obs_id)
     if (url is None) == (html_file is None):
@@ -128,63 +184,100 @@ def observe(root: Path, obs_id: str, url: str | None, html_file: str | None,
                 raise ValueError("Observed URL host does not match the linked reference")
     base = state / "observations" / obs_id
     manifest_path = base / "manifest.json"
-    if manifest_path.exists() and not overwrite:
-        raise ValueError("Observation exists; use a new --id or explicit --overwrite")
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
         raise ValueError("Install Playwright and Chromium first (aestitch doctor)") from exc
+    if claim and not overwrite:
+        try:
+            base.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            raise ObservationReserved("Observation ID is already reserved or used: " + obs_id) from exc
+    elif base.exists() and not overwrite:
+        # An orphan directory from a failed render still owns this ID.
+        raise ValueError("Observation exists; use a new --id or explicit --overwrite")
     manifest: dict[str, Any] = {"schema_version": 1, "id": obs_id,
+                               "status": "in_progress",
                                "source": "offline-html" if html_file else url,
                                "reference_id": reference or None,
                                "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                                "capture_type": "offline" if html_file else ("remote" if allow_remote else "local"),
+                               "capture_context": {
+                                   "browser": "chromium",
+                                   "headless": True,
+                                   "reduced_motion": "reduce",
+                                   "screenshots": {"animations": "disabled"},
+                                   "device_scale_factor": 1,
+                               },
+                               "evidence_scope": list(STATIC_EVIDENCE_SCOPE),
+                               "not_observed": list(NOT_OBSERVED_STATES),
                                "viewports": {}, "interpretation_status": "unreviewed",
                                "note": "DOM/style geometry and screenshots are observations, not design conclusions."}
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True,
-             executable_path=os.environ.get("AESTITCH_CHROMIUM_EXECUTABLE") or None)
-        try:
-            for vp in VIEWPORTS if viewport == "both" else (viewport,):
-                w, h = VIEWPORTS[vp]
-                ctx = browser.new_context(viewport={"width": w, "height": h},
-                                          device_scale_factor=1, reduced_motion="reduce")
-                try:
-                    page = ctx.new_page()
-                    errors: list[str] = []
-                    page.on("pageerror", lambda err: errors.append(str(err)[:200]))
-                    if html_file:
-                        # Fully offline, no remote URLs, images or CSS may be fetched.
-                        ctx.route("**/*", lambda route: route.abort())
-                        page.set_content(html_path.read_text(encoding="utf-8"),
-                                         wait_until="domcontentloaded", timeout=20000)
-                    else:
-                        # Restrict requests to the intended host. In particular,
-                        # remote pages must not use this tool to reach private
-                        # localhost services or third-party tracking resources.
-                        intended_host = urlsplit(url).hostname
-                        def same_host_only(route: Any) -> None:
-                            requested = urlsplit(route.request.url)
-                            if requested.scheme in ("http", "https") and requested.hostname == intended_host:
-                                route.continue_()
-                            else:
-                                route.abort()
-                        ctx.route("**/*", same_host_only)
-                        response = page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                        if urlsplit(page.url).hostname != intended_host:
-                            raise ValueError("Redirect outside the observed host; supply the final trusted URL")
-                    page.wait_for_timeout(200)
-                    item = _capture_one(page, base / vp, steps)
-                    item["page_errors"] = errors[:12]
-                    item["http_status"] = response.status if not html_file and response else None
-                    # paths stay relative to target project to make handoff portable
-                    for frame in item["frames"]:
-                        frame["path"] = Path(frame["path"]).relative_to(root.resolve()).as_posix()
-                    manifest["viewports"][vp] = item
-                finally:
-                    ctx.close()
-        finally:
-            browser.close()
+    if claim:
+        # Durable in-progress marker: a crash leaves a traceable, non-reusable ID.
+        save(manifest_path, manifest)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True,
+                 executable_path=os.environ.get("AESTITCH_CHROMIUM_EXECUTABLE") or None)
+            try:
+                for vp in VIEWPORTS if viewport == "both" else (viewport,):
+                    w, h = VIEWPORTS[vp]
+                    ctx = browser.new_context(viewport={"width": w, "height": h},
+                                              device_scale_factor=1, reduced_motion="reduce")
+                    try:
+                        page = ctx.new_page()
+                        errors: list[str] = []
+                        page.on("pageerror", lambda err: errors.append(str(err)[:200]))
+                        if html_file:
+                            # Fully offline, no remote URLs, images or CSS may be fetched.
+                            ctx.route("**/*", lambda route: route.abort())
+                            page.set_content(html_path.read_text(encoding="utf-8"),
+                                             wait_until="domcontentloaded", timeout=20000)
+                        else:
+                            # Restrict requests to the intended host. In particular,
+                            # remote pages must not use this tool to reach private
+                            # localhost services or third-party tracking resources.
+                            intended_host = urlsplit(url).hostname
+                            def same_host_only(route: Any) -> None:
+                                requested = urlsplit(route.request.url)
+                                if requested.scheme in ("http", "https") and requested.hostname == intended_host:
+                                    route.continue_()
+                                else:
+                                    route.abort()
+                            ctx.route("**/*", same_host_only)
+                            response = page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                            if urlsplit(page.url).hostname != intended_host:
+                                raise ValueError("Redirect outside the observed host; supply the final trusted URL")
+                        page.wait_for_timeout(200)
+                        item = _capture_one(page, base / vp, steps)
+                        item["capture_context"] = {
+                            "viewport": {"width": w, "height": h},
+                            "reduced_motion": "reduce",
+                            "animations": "disabled",
+                            "device_scale_factor": 1,
+                            "steps": steps,
+                            "capture_type": manifest["capture_type"],
+                        }
+                        item["evidence_scope"] = list(STATIC_EVIDENCE_SCOPE)
+                        item["page_errors"] = errors[:12]
+                        item["http_status"] = response.status if not html_file and response else None
+                        # paths stay relative to target project to make handoff portable
+                        for frame in item["frames"]:
+                            frame["path"] = Path(frame["path"]).relative_to(root.resolve()).as_posix()
+                        manifest["viewports"][vp] = item
+                    finally:
+                        ctx.close()
+            finally:
+                browser.close()
+    except Exception as exc:
+        manifest["status"] = "failed"
+        manifest["failed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        manifest["error"] = str(exc)[:500]
+        save(manifest_path, manifest)
+        raise
+    manifest["status"] = "completed"
+    manifest["completed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save(manifest_path, manifest)
     if reference:
         from aestitch_workflows import _ref_db
@@ -206,18 +299,40 @@ def observe_report(root: Path, obs_id: str) -> str:
     manifest = load(state_dir(root) / "observations" / slug(obs_id) / "manifest.json", None)
     if not isinstance(manifest, dict):
         raise ValueError("Observation not found")
-    lines = [f"# Observation: {manifest['id']}", "", f"Source: `{manifest['source']}`", "",
+    lines = [f"# Observation: {manifest.get('id', obs_id)}", "",
+             f"Status: {manifest.get('status', 'legacy/unknown')}",
+             f"Source: `{manifest.get('source', 'unknown')}`", "",
              "Facts below are captured from a rendered browser page. No aesthetic conclusion is inferred.", ""]
-    for vp, v in manifest["viewports"].items():
-        ev = v["evidence"]
-        lines.extend([f"## {vp}", "", f"- Title: {ev['title']}",
-                      f"- Document height: {ev['documentHeight']}",
-                      f"- Horizontal overflow: {ev['horizontalOverflow']}",
-                      f"- Visible controls: {len(ev['controls'])}",
-                      f"- Frames: {', '.join(f['path'] for f in v['frames'])}", "",
+    if manifest.get("status") == "failed":
+        lines.extend([f"- Failure: {manifest.get('error', 'not recorded')}",
+                      f"- Failed at: {manifest.get('failed_at', 'not recorded')}", ""])
+    elif manifest.get("status") == "in_progress":
+        lines.extend(["- Capture did not finish; treat this observation as incomplete.", ""])
+    for vp, v in manifest.get("viewports", {}).items():
+        ev = v.get("evidence") or {}
+        lines.extend([f"## {vp}", "", f"- Title: {ev.get('title', 'unknown')}",
+                      f"- Document height: {ev.get('documentHeight', 'unknown')}",
+                      f"- Horizontal overflow: {ev.get('horizontalOverflow', 'unknown')}",
+                      f"- Visible controls: {len(ev.get('controls', []))}"])
+        ctx = v.get("capture_context") or manifest.get("capture_context")
+        if isinstance(ctx, dict) and ctx:
+            viewport = ctx.get("viewport") or ev.get("viewport") or {}
+            size = f"{viewport.get('width', '?')}x{viewport.get('height', '?')}"
+            screenshots = ctx.get("screenshots") or {}
+            animations = ctx.get("animations") or screenshots.get("animations", "unknown")
+            lines.append(f"- Capture context: viewport={size}; reduced_motion={ctx.get('reduced_motion', 'unknown')}; animations={animations}")
+        else:
+            lines.append("- Capture context: legacy/unknown (manifest predates capture context)")
+        scope = v.get("evidence_scope") or manifest.get("evidence_scope")
+        lines.append(f"- Evidence scope: {', '.join(scope) if isinstance(scope, list) else (scope or 'legacy/unknown')}")
+        not_observed = v.get("not_observed") or manifest.get("not_observed")
+        if not_observed:
+            lines.append(f"- Not observed: {', '.join(not_observed)}")
+        frames = v.get("frames", [])
+        lines.extend([f"- Frames: {', '.join(f.get('path', '?') for f in frames)}", "",
                       "### Observable anchor geometry and CSS", ""])
-        for a in ev["anchors"][:24]:
-            lines.append(f"- `{a['key']}`: {a['rect']}; font={a['style']['fontFamily']}; size={a['style']['fontSize']}")
+        for a in ev.get("anchors", [])[:24]:
+            lines.append(f"- `{a.get('key', '?')}`: {a.get('rect', {})}; font={(a.get('style') or {}).get('fontFamily')}; size={(a.get('style') or {}).get('fontSize')}")
         lines.append("")
     lines += ["## Agent interpretation worksheet", "", "- [ ] Which observable detail is distinctive, and in which frame/anchor?",
               "- [ ] What purpose does it serve? Mark this as hypothesis until a user confirms.",
@@ -260,14 +375,70 @@ def concept_load(root: Path, concept_id: str) -> dict[str, Any]:
     return item
 
 
+def _fit_observation_id(base: str, suffix: str) -> str:
+    """Keep generated observation IDs within the shared slug limit.
+
+    Long Concept IDs share their prefix after truncation, so a short hash of the
+    full base is appended whenever truncation happens; otherwise two different
+    Concepts could collide on the same observation ID.
+    """
+    candidate = base + suffix
+    if len(candidate) <= 63:
+        return candidate
+    digest_part = sha1(base.encode("utf-8")).hexdigest()[:8]
+    room = 63 - len(suffix) - len(digest_part) - 1
+    stem = base[:room].rstrip("-_") or "concept"
+    return stem + "-" + digest_part + suffix
+
+
+def _next_concept_observation_id(state: Path, concept_id: str, rec: dict[str, Any]) -> str:
+    base = f"concept-{slug(concept_id)}"
+    used = set(rec.get("observation_ids") or [])
+    if rec.get("observation_id"):
+        used.add(rec["observation_id"])
+    candidate = base
+    index = 1
+    while candidate in used or (state / "observations" / candidate).exists():
+        index += 1
+        candidate = _fit_observation_id(base, f"-r{index}")
+    return candidate
+
+
+class ObservationReserved(ValueError):
+    """Raised when another writer already owns the requested observation ID."""
+
+
 def concept_render(root: Path, concept_id: str, viewport: str) -> dict[str, Any]:
-    rec = concept_load(root, concept_id)
-    obs_id = f"concept-{slug(concept_id)}"
-    obs = observe(root, obs_id, None, str(root.resolve() / rec["prototype"]), viewport, 1,
-                  overwrite=True)
-    rec["observation_id"] = obs_id
-    save(_concept_path(state_dir(root), concept_id) / "concept.json", rec)
-    return obs
+    state = state_dir(root)
+    concept_dir = _concept_path(state, concept_id)
+    if not (concept_dir / "concept.json").is_file():
+        raise ValueError("Concept does not exist")
+    # Single writer per Concept, enforced across processes. Concurrent renders
+    # fail clearly instead of racing on the same observation ID or pointer.
+    with _concept_write_lock(concept_dir):
+        rec = concept_load(root, concept_id)
+        obs = None
+        for _ in range(5):
+            obs_id = _next_concept_observation_id(state, concept_id, rec)
+            try:
+                obs = observe(root, obs_id, None, str(root.resolve() / rec["prototype"]),
+                              viewport, 1, overwrite=False, claim=True)
+                break
+            except ObservationReserved:
+                continue
+        if obs is None:
+            raise ValueError("Could not reserve a fresh observation ID for this concept")
+        history = list(rec.get("observation_ids") or [])
+        old = rec.get("observation_id")
+        if old and old not in history:
+            history.append(old)
+        if obs_id not in history:
+            history.append(obs_id)
+        rec["observation_ids"] = history
+        rec["observation_id"] = obs_id
+        rec["observation_status"] = "completed"
+        save(concept_dir / "concept.json", rec)
+        return obs
 
 
 def _anchor_map(evidence: dict[str, Any]) -> dict[str, dict[str, Any]]:

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "direction-field-note",
+  "one_sentence": "Make the site read like a field notebook that keeps changing, not a portfolio index.",
+  "mechanism": "Entries reorder by observation date; each material sample shows its latest reading.",
+  "signature_element": "An expandable 'reading for that day' attached to every sample.",
+  "tradeoff": "No conventional navigation; the first visit needs one sentence of guidance.",
+  "risk": "With fewer than six entries the page may feel empty.",
+  "intent_fit": [
+    "desired_response: the practice feels ongoing",
+    "audience: non-specialists can still read one entry"
+  ],
+  "not_this": "Not a dark page with fluorescent green 'tech' styling.",
+  "status": "proposed",
+  "user_words": ""
+}

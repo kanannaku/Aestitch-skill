@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project": "example-studio",
+  "goal": "Let a visitor understand the material research practice within 30 seconds.",
+  "audience": "Potential collaborators and non-specialist clients.",
+  "desired_response": "Open one case study and remember that the studio grows and tests its own materials.",
+  "user_words": [
+    "想要安静一点，但不要空",
+    "不要像那种圆角卡片的 SaaS 模板"
+  ],
+  "likes": [
+    {
+      "source": "A printed field notebook",
+      "what": "The rough paper texture and handwritten measurements",
+      "why": "It feels like the work is still being figured out",
+      "scope": "project"
+    }
+  ],
+  "dislikes": [
+    {
+      "source": "A generic startup landing page",
+      "what": "Rows of rounded feature cards with icons",
+      "why": "It makes the practice look interchangeable",
+      "scope": "project"
+    }
+  ],
+  "constraints": [
+    "Keep the existing wordmark",
+    "Must work on a phone"
+  ],
+  "open_questions": [
+    "Should material samples be photographed or drawn?"
+  ],
+  "confirmed_by_user": true,
+  "confirmed_at": "2026-11-18T10:00:00+00:00"
+}
