@@ -1,86 +1,80 @@
 # Aestitch
 
-**Your taste. Your design. Every iteration.**
+**Discover your taste. Translate inspiration. Preserve design intent.**  
+*Local-first design intelligence for coding agents · by Suatlora*
 
-*A local-first design memory & visual change guardian for AI coding agents — by Suatlora.*
+> **v0.2.0 early preview.** Runnable CLI + portable `SKILL.md`, not an autonomous design model. It does not browse reference URLs, judge beauty, learn visual features from pixels or guarantee that generated code reproduces screenshots.
 
-Many AI-made websites begin with a decent concept and drift toward generic UI during repeated prompts. Aestitch v0.1 preserves **explicitly confirmed personal taste** and captures **actual browser evidence** across iterations. It does **not** pretend to compute an objective aesthetic score.
+AI coding agents can make a page work while losing its visual intent across iterations. Aestitch helps preserve **explicit user decisions**, **reference provenance**, **cross-model design contracts**, and **browser/code change evidence**. It intentionally permits multiple stylistic preferences depending on context.
 
-> Early preview. The design-memory and screenshot-comparison workflows are implemented; a full autonomous creative agent and calibrated aesthetic evaluator are **not**.
+## What works
 
-## What works now
+| Workflow | Commands | Actual behavior |
+|---|---|---|
+| Personal taste | `record`, `brief`, `taste compare/report` | Stores explicit contextual choices including `both`, `neither`, `unsure`; no implicit taste inference |
+| Reference library | `reference add/list` | Records URLs without fetching; copies trusted local image references privately |
+| Design handoff | `contract create/show/approve` | JSON design contracts + human-readable Markdown; explicit confirmation flag + in-project image hash required for approval |
+| Visual evidence | `capture`, `guard` | Playwright browser desktop/mobile captures and Pillow image differences; not aesthetic quality scores |
+| Change budget | `scope snapshot/check` | Detects changed/add/removed source files, out-of-scope paths, new JS package dependency names; review flags, not code metrics |
+| Tooling | `doctor` | Reports optional dependencies |
 
-- **Remember your decisions:** record `prefer` / `avoid` feedback with a scope and render a clear design brief.
-- **Protect the baseline:** capture localhost pages or self-contained offline HTML prototypes with Playwright at desktop/mobile sizes, preventing accidental overwrite.
-- **Detect drift:** compare screenshots with Pillow, highlight changed pixels, report overflow and missing alt attributes, and flag large changes for review.
-- **Portable Skill:** standard `skills/aestitch/SKILL.md` for compatible coding agents, plus independent scripts.
-- **Local-first:** no account, API key, external model or telemetry required. `.aestitch/` is private and locally ignored by git by default.
+All project state defaults to `<project>/.aestitch/`, with a nested `.gitignore`. No external model API, sign-up or telemetry. Aestitch does not change website source by itself.
 
-## Quick start
+## Install
 
-Use Python 3.10+ and run from the **website project root**. Optionally, from the Aestitch repository first run `python -m pip install -e ".[all]"` to install the `aestitch` command. Replace `PATH_TO_AESTITCH` with where you placed the Aestitch repository or installed skill.
+Python 3.10+ is required. Optional Playwright and Pillow provide screenshots/diffs. From **this repository**:
 
 ```powershell
-# Optional modules. Image compare and browser capture need these dependencies.
-python -m pip install pillow playwright
-python -m playwright install chromium
-
-# Minimal memory workflow (no extra packages required)
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py init
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py record --kind avoid --axis color --note "No generic indigo hero gradients" --context "homepage"
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py brief
-
-# Start your own website separately (e.g. npm run dev)
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py capture --url http://127.0.0.1:3000 --tag baseline
-# Make an intentional change and reload:
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py capture --url http://127.0.0.1:3000 --tag candidate
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py guard
+uv sync --extra all
+uv run python -m playwright install chromium
+uv run aestitch doctor
 ```
 
-For an offline HTML prototype inside the target project, replace `--url ...` with `--html-file .\prototype.html`. Offline mode blocks page-initiated network requests; use self-contained inline styles and resources.
+Or run the script without packaging: `python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py --root F:\Projects\example init` (first `pip install pillow playwright` only if you need visual operations).
 
-You can also pass `--root F:\Projects\your-website` **before** the subcommand when running the script from another directory. If you have a system Chromium installed, you can set `AESTITCH_CHROMIUM_EXECUTABLE` to its full executable path as an alternative to downloading Playwright Chromium. Browser capture is restricted to localhost unless `--allow-remote` is explicitly provided; do not run it on unfamiliar websites.
+## Reproducible end-to-end example
 
-## Agent setup
+Run commands from **the target website project root**, with the Aestitch CLI accessible as `aestitch` (or prefix each command with `python PATH_TO_AESTITCH/.../aestitch.py`).
 
-Copy `skills/aestitch` into your project's `.agents/skills/aestitch` folder or install as a Skill from the source repo after publishing. For different clients, follow their own skill discovery path. Invoke the skill and ask:
+```powershell
+aestitch init
+# Metadata only; URL is not fetched or visually analyzed
+ aestitch reference add --label "Editorial source" --url "https://example.org" --focus typography --context homepage
+ aestitch reference add --label "My screenshot" --image ".\approved-capture.png" --focus composition
+ aestitch reference list
+# Use the returned reference IDs instead of placeholders.
+ aestitch taste compare --left ref-FIRST --right ref-SECOND --choice both --why "Each suits a different module" --context homepage
+ aestitch taste report
+ aestitch contract create --page home --goal "Present my work" --direction "Editorial, deliberate, cinematic" --scope "app/page.tsx" --reference ref-FIRST
+ aestitch contract show --page home
+# Only after the user explicitly accepts a real, local prototype image:
+ aestitch contract approve --page home --evidence ".\approved-capture.png" --note "User approved this composition" --user-confirmed
+ aestitch scope snapshot --tag home-redesign
+# Start the project's dev server, capture original before edits:
+ aestitch capture --url http://127.0.0.1:3000 --tag baseline
+# Implement scoped changes, run tests, then:
+ aestitch capture --url http://127.0.0.1:3000 --tag candidate
+ aestitch guard
+ aestitch scope check --tag home-redesign --allow app/page.tsx --max-added 0 --max-changed 2 --max-deleted 0 --max-dependencies 0
+```
 
-> Read the Aestitch brief. Capture a visual baseline before editing. Preserve approved choices. Capture the candidate and explain what changed using the guard report. Do not call a screenshot diff an aesthetic score.
+**Important:** `--root` is a top-level argument and goes **before** `reference`, `contract`, etc. Use distinct snapshot tags per task. Screenshot baseline overwrites require explicit `--overwrite-baseline`. `scope snapshot` overwrites require `--overwrite`.
 
-## Commands
+## Skill usage
 
-| Command | Function | Requires |
-|---|---|---|
-| `init` | Initialize local profile and ignore rules | Python |
-| `record` | Store explicit design feedback | Python |
-| `brief` | Summarize accepted/avoided choices | Python |
-| `capture` | Capture browser screenshots & diagnostic metadata | Playwright + Chromium |
-| `guard` | Generate pixel diff and evidence report | Pillow |
-| `doctor` | Check dependencies | Python |
+Add `skills/aestitch` to your coding agent's project-specific Skill directory (`.agents/skills/aestitch` for compatible clients; actual discovery path is agent-specific). Its instructions require: observe → compare user taste → write draft contract → get explicit approval → capture/implement under change scope → review browser/code evidence → record decisions.
 
-`guard` exits with status 2 if a screenshot is missing or dimensions differ, but outputs a report. A large changed-pixel percentage is marked `needs_review`, not automatically failed.
+See [taste discovery](skills/aestitch/references/taste-discovery.md), [handoff and complexity](skills/aestitch/references/handoff-and-complexity.md), [security limitations](skills/aestitch/references/evidence-and-safety.md) and [benchmark protocol](examples/evaluation-protocol.md).
 
-## Important limitations
+## What is NOT implemented
 
-A screenshot does not test hover, keyboard navigation, all animations or accessibility. Pixel difference only detects change, not taste, artistry or UX quality. Reproducibility requires controlling fonts, data and environment. No image generation or ML-based preference learning is included in v0.1.
+No automatic reference-page ingestion or screenshot semantic analysis; no preference predictor, vector database, RAG retrieval, aesthetic scoring, full static-analysis complexity detector, model orchestration or completed independent performance benchmark. Reference and taste workflows require actual user and agent reasoning. Visual evidence is for **review**, not automatic accept/reject.
 
-## Roadmap
+## Develop and test
 
-- [x] Memory with explicit feedback and contextual scope
-- [x] Local browser capture + basic diagnostics
-- [x] Desktop/mobile image comparison + reports
-- [ ] Interactive preference comparison from real A/B prototypes
-- [ ] Screenshot regions and dynamic-content masking
-- [ ] Repeatable demo benchmark against no-Skill baselines
-- [ ] Rich UI critique with grounded evidence and optional vision provider
-- [ ] Multi-project preference merge with explicit opt-in
-
-## Development
-
-```bash
-python -m pip install pillow
+```powershell
 python -m unittest discover -s tests -v
-python skills/aestitch/scripts/aestitch.py doctor
+python skills/aestitch/scripts/aestitch.py --help
 ```
 
-Contributions welcome after initial public release. **MIT License**. Authored under the Suatlora personal IP; the project name and artwork are not themselves granted as trademarks by the MIT license.
+MIT license. The source can be used independently of the Suatlora personal website. Do not share personal screenshots or reference materials without permission.

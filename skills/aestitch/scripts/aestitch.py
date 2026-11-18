@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aestitch v0.1: local-first design memory and visual change evidence.
+"""Aestitch v0.2: local-first design memory and visual change evidence.
 
 Python >=3.10. Browser capture optionally requires playwright + Chromium.
 Pixel comparison optionally requires Pillow. No network calls except user-requested
@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 AXES = ("composition", "typography", "color", "motion", "interaction", "content", "other")
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
 TAGS = ("baseline", "candidate")
@@ -353,6 +353,59 @@ def make_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("guard", help="Compare baseline and candidate screenshots")
     p.add_argument("--warn-change-pct", type=float, default=12.0)
     p.add_argument("--pixel-threshold", type=int, default=24)
+    # v0.2 structured design workflows; no model, network, or vector DB required.
+    reference = sub.add_parser("reference", help="Save and review reference metadata (never fetch URLs)")
+    ref_actions = reference.add_subparsers(dest="reference_action", required=True)
+    rp = ref_actions.add_parser("add")
+    rp.add_argument("--label", required=True)
+    source = rp.add_mutually_exclusive_group(required=True)
+    source.add_argument("--url")
+    source.add_argument("--image")
+    rp.add_argument("--context", default="")
+    rp.add_argument("--observation", default="", help="Unverified observation; not assumed user preference")
+    rp.add_argument("--focus", default="", help="What dimension this reference illustrates")
+    ref_actions.add_parser("list")
+
+    taste = sub.add_parser("taste", help="Record contextual A/B preference evidence")
+    taste_actions = taste.add_subparsers(dest="taste_action", required=True)
+    tp = taste_actions.add_parser("compare")
+    tp.add_argument("--left", required=True)
+    tp.add_argument("--right", required=True)
+    tp.add_argument("--choice", required=True, choices=("left", "right", "both", "neither", "unsure"))
+    tp.add_argument("--why", default="")
+    tp.add_argument("--context", default="")
+    taste_actions.add_parser("report")
+
+    contract = sub.add_parser("contract", help="Create or inspect cross-model visual design contracts")
+    contract_actions = contract.add_subparsers(dest="contract_action", required=True)
+    cp = contract_actions.add_parser("create")
+    cp.add_argument("--page", required=True)
+    cp.add_argument("--goal", required=True)
+    cp.add_argument("--direction", required=True)
+    cp.add_argument("--scope", required=True)
+    cp.add_argument("--reference", action="append", default=[])
+    cp = contract_actions.add_parser("show")
+    cp.add_argument("--page", required=True)
+    cp.add_argument("--output", help="Optional Markdown handoff output path")
+    cp = contract_actions.add_parser("approve")
+    cp.add_argument("--page", required=True)
+    cp.add_argument("--evidence", required=True, help="Confirmed prototype screenshot inside the project")
+    cp.add_argument("--note", required=True, help="Specific decision user explicitly accepted")
+    cp.add_argument("--user-confirmed", action="store_true", help="Use only after the user explicitly approves")
+
+    scope = sub.add_parser("scope", help="Snapshot and inspect implementation change budgets")
+    scope_actions = scope.add_subparsers(dest="scope_action", required=True)
+    sp = scope_actions.add_parser("snapshot")
+    sp.add_argument("--tag", default="baseline")
+    sp.add_argument("--overwrite", action="store_true")
+    sp = scope_actions.add_parser("check")
+    sp.add_argument("--tag", default="baseline")
+    sp.add_argument("--allow", action="append", default=[], help="Project-relative file or directory; repeatable")
+    sp.add_argument("--max-added", type=int, default=3)
+    sp.add_argument("--max-changed", type=int, default=10)
+    sp.add_argument("--max-deleted", type=int, default=0)
+    sp.add_argument("--max-dependencies", type=int, default=0)
+
     sub.add_parser("doctor", help="Check optional dependencies")
     return parser
 
@@ -372,6 +425,52 @@ def main(argv: list[str] | None = None) -> int:
                            args.allow_remote, args.overwrite_baseline)
         if args.command == "guard":
             return guard(root, args.warn_change_pct, args.pixel_threshold)
+        if args.command in ("reference", "taste", "contract", "scope"):
+            from aestitch_workflows import (
+                add_reference, list_references, taste_compare, taste_report,
+                contract_create, contract_load, contract_markdown, contract_approve,
+                scope_snapshot, scope_check,
+            )
+            if args.command == "reference":
+                if args.reference_action == "add":
+                    item = add_reference(root, args.label, args.url, args.image,
+                                         args.context, args.observation, args.focus)
+                    print(f"Saved reference {item['id']} ({item['label']}); no URL was fetched")
+                else:
+                    print(json.dumps(list_references(root), ensure_ascii=False, indent=2))
+            elif args.command == "taste":
+                if args.taste_action == "compare":
+                    item = taste_compare(root, args.left, args.right, args.choice, args.why, args.context)
+                    print(f"Saved contextual choice {item['id']}: {item['choice']}")
+                else:
+                    print(taste_report(root))
+            elif args.command == "contract":
+                if args.contract_action == "create":
+                    item = contract_create(root, args.page, args.goal, args.direction,
+                                           args.scope, args.reference)
+                    print(f"Created DRAFT design contract: {item['page']}")
+                elif args.contract_action == "approve":
+                    item = contract_approve(root, args.page, args.evidence, args.note, args.user_confirmed)
+                    print(f"Approved design contract: {item['page']} (evidence recorded)")
+                else:
+                    content = contract_markdown(contract_load(root, args.page))
+                    if args.output:
+                        write_text(Path(args.output).expanduser().resolve(), content)
+                        print(f"Wrote {args.output}")
+                    else:
+                        print(content)
+            else:
+                if args.scope_action == "snapshot":
+                    item = scope_snapshot(root, args.tag, args.overwrite)
+                    print(f"Saved snapshot {item['tag']} ({len(item['files'])} source files)")
+                else:
+                    result, code = scope_check(root, args.tag, args.allow, args.max_added,
+                                               args.max_changed, args.max_deleted, args.max_dependencies)
+                    print(f"Scope: {result['status']}. Changed: {len(result['modified'])}, added: {len(result['added'])}, removed: {len(result['deleted'])}")
+                    for reason in result["review_reasons"]:
+                        print("Review: " + reason)
+                    return code
+            return 0
         if args.command == "doctor":
             return doctor()
     except (ValueError, OSError) as exc:

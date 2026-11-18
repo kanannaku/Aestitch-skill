@@ -1,37 +1,54 @@
-# Aestitch（由 Suatlora 创建）
+# Aestitch · 由 Suatlora 创建
 
-**Your taste. Your design. Every iteration.**
+**发现你的审美，把灵感变成设计契约，并在反复开发中保留设计意图。**
 
-Aestitch 是面向 Codex、Claude Code 等编码 Agent 的个人化设计记忆与视觉变更检查 Skill。
+Aestitch v0.2.0 是一个本地优先的 Agent Skill 与命令行工具。它**不是**自动美化网站的模型，也不能直接从截图理解你的审美、替代用户做最终设计判断。
 
-它不是「一键变好看」提示词，也不声称能自动判断美学优劣。首版解决两个问题：
+## 首版已实现的能力
 
-1. **Design Memory**：仅把用户明确确认的喜欢/不喜欢记录为可编辑的项目级偏好。
-2. **Design Guardian**：使用浏览器真实截图建立基线，比较修改前后变化，生成差异图片与审查报告。
+- **Reference Intelligence 的基础**：记录 URL 元数据或复制你提供的本地截图，保存参考重点和观察；不会自动访问或解析网页。
+- **Taste Discovery 的基础**：记录成对参考的选择，允许“都喜欢 / 都不喜欢 / 不确定”，保留场景，不武断生成固定风格标签。
+- **Design Contract**：把页面目标、创意方向、参考 ID 和实现范围保存为 JSON，并输出可交给 Codex、Claude Code 等工具的 Markdown。正式批准要求显式确认和项目内的原型截图证据。
+- **Architecture Guardian 的第一步**：通过源码文件 SHA-256 快照，检查本轮增加、删除、修改的文件，越界修改和新增 package.json 依赖；这不是完整复杂度分析。
+- **Visual Guardian（保留 v0.1）**：真实浏览器桌面/移动截图、像素差异、横向溢出与基础错误诊断。像素差异不是美学评分。
 
-## Windows / PowerShell 使用
+## Windows / PowerShell
 
-如果用 uv，可先在 Aestitch 仓库执行 `uv sync --extra all`，再执行 `uv run python -m playwright install chromium`；该虚拟环境默认位于仓库内。下面也提供普通 Python 安装方式。
-
-请在你的网站项目根目录打开终端，用真正的 Aestitch 路径替换以下的 `PATH_TO_AESTITCH`：
+仓库地址：<https://github.com/kanannaku/Aestitch-skill>
 
 ```powershell
-python -m pip install pillow playwright
-python -m playwright install chromium
-
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py init
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py record --kind avoid --axis color --note "不要默认蓝紫渐变" --context "首页"
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py brief
-
-# 先按项目本身的说明启动 Next.js 开发服务器，默认这里示例 3000 端口
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py capture --url http://127.0.0.1:3000 --tag baseline
-# 修改完成后：
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py capture --url http://127.0.0.1:3000 --tag candidate
-python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py guard
+cd F:\Projects
+git clone https://github.com/kanannaku/Aestitch-skill.git
+cd .\Aestitch-skill
+uv sync --extra all
+uv run python -m playwright install chromium
+uv run aestitch doctor
 ```
 
-输出默认位于网站项目的 `.aestitch/` 目录，包含 `profile.json`、截图以及 `reports/guard-report.md`。该目录内默认附带 `.gitignore`，防止个人偏好和截图被意外提交。不会读取 API Key，不会上传你的页面，不会修改你的网站代码。
+请在目标网站项目下执行命令（将 `PATH_TO_AESTITCH` 替换为本地真实路径），例如：
 
-`capture` 只允许 localhost；远程网页需要显式 `--allow-remote`。也支持 `--html-file .\prototype.html` 来渲染项目内部、自包含样式的离线 HTML 原型。`guard` 的差异数值表示**变化多少**，并非**好看多少**。屏幕高度不同也会报告需要人工核验。
+```powershell
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py init
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py reference add --label "排版参考" --url "https://example.org" --focus typography --context homepage
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py reference list
+# 先参考实际返回的 ref-ID，再执行 taste compare
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py taste report
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py contract create --page home --goal "展示项目" --direction "编辑式构图" --scope "app/page.tsx"
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py contract show --page home
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py scope snapshot --tag homepage-v1
+# 修改文件后，检查范围：
+python PATH_TO_AESTITCH\skills\aestitch\scripts\aestitch.py scope check --tag homepage-v1 --allow app/page.tsx --max-added 0 --max-changed 2
+```
 
-详细架构、局限和路线图见 [English README](README.md)；Agent 工作流程见 [SKILL.md](skills/aestitch/SKILL.md)。
+在其他目录执行时，将 `--root F:\Projects\your-site` 放在子命令之前。请以 `--help` 和英文 README 为准查看完整参数。
+
+## 重要限制
+
+- URL 只作为参考记录；工具不会自动下载、复刻或分析网页。
+- 反馈只能代表当前用户在指定场景的选择；目前不具备自动风格学习能力。
+- Design Contract 依靠用户和 Agent 正确填写；`--user-confirmed` 只是操作者声明，不能代替真实授权。
+- Scope 检测只处理小于 2MB 的受支持源码文件及 package.json 依赖名称，不是代码质量评分，必须继续使用原有 lint/build/test。
+- `.aestitch/` 默认 Git 忽略，包含偏好、截图和设计契约；分享前请仔细审核隐私。
+- **不要在正式个人网站上直接冒险测试。** 先在独立小项目中验证效果，并遵循 [对照实验协议](examples/evaluation-protocol.md)。目前尚无 Aestitch 优于其他 Skill 的实验结果。
+
+完整流程参见 [SKILL.md](skills/aestitch/SKILL.md) 与 [English README](README.md)。

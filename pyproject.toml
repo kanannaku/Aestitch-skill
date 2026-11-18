@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aestitch-skill"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first taste memory and design drift evidence for coding agents"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -21,7 +21,7 @@ all = ["pillow>=10", "playwright>=1.40"]
 aestitch = "aestitch:main"
 
 [tool.setuptools]
-py-modules = ["aestitch"]
+py-modules = ["aestitch", "aestitch_workflows"]
 
 [tool.setuptools.package-dir]
 "" = "skills/aestitch/scripts"
