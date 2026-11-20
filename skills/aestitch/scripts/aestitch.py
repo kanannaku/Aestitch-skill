@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 AXES = ("composition", "typography", "color", "motion", "interaction", "content", "other")
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
 TAGS = ("baseline", "candidate")
@@ -460,8 +460,12 @@ def make_parser() -> argparse.ArgumentParser:
     op.add_argument("--allow-remote", action="store_true", help="Explicit opt-in for visiting trusted remote websites")
     op.add_argument("--reference", default="", help="Optional previously saved reference ID")
     op.add_argument("--overwrite", action="store_true")
+    op.add_argument("--check-text-contrast", action="store_true",
+                    help="Measure rendered text/background contrast; records PASS/FAIL/UNKNOWN per viewport")
     op = observe_actions.add_parser("report")
     op.add_argument("--id", required=True)
+    op.add_argument("--require-text-contrast-pass", action="store_true",
+                    help="Exit non-zero unless rendered text contrast is PASS with full coverage")
 
     concept = sub.add_parser("concept", help="Register and compare independent visual prototypes")
     concept_actions = concept.add_subparsers(dest="concept_action", required=True)
@@ -584,19 +588,33 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command in ("observe", "concept", "fidelity"):
             from aestitch_creative import (observe, observe_report, concept_add,
-                concept_render, concept_compare, fidelity_compare)
+                concept_render, concept_compare, fidelity_compare,
+                text_contrast_status, text_contrast_gate)
             if args.command == "observe":
                 if args.observe_action == "capture":
                     result = observe(root, args.id, args.url, args.html_file, args.viewport,
-                                     args.steps, args.allow_remote, args.reference, args.overwrite)
+                                     args.steps, args.allow_remote, args.reference, args.overwrite,
+                                     check_text_contrast=args.check_text_contrast)
                     print(f"Captured observation {result['id']} with viewports: {', '.join(result['viewports'])}")
+                    if args.check_text_contrast:
+                        status = text_contrast_status(result)
+                        print(f"Rendered text contrast: {status}")
+                        if status != "PASS":
+                            print("FAIL, UNKNOWN and NOT_RUN are not a passing readability check.",
+                                  file=sys.stderr)
+                            return 2
                 else:
                     print(observe_report(root, args.id))
+                    if args.require_text_contrast_pass:
+                        status, detail = text_contrast_gate(root, args.id)
+                        print(f"Rendered text contrast gate: {status}. {detail}")
+                        if status != "PASS":
+                            return 2
             elif args.command == "concept":
                 if args.concept_action == "add":
-                    record = concept_add(root, args.id, args.title, args.thesis,
-                                         args.mechanism, args.html_file, args.mode)
-                    print(f"Registered unreviewed {record['scope']} concept {record['id']}")
+                    concept_record = concept_add(root, args.id, args.title, args.thesis,
+                                                 args.mechanism, args.html_file, args.mode)
+                    print(f"Registered unreviewed {concept_record['scope']} concept {concept_record['id']}")
                 elif args.concept_action == "render":
                     result = concept_render(root, args.id, args.viewport)
                     print(f"Rendered {args.id}: {', '.join(result['viewports'])}")

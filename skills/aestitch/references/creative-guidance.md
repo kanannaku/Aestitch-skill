@@ -1,6 +1,6 @@
-# Creative Guidance — v0.4 protocol preview
+# Creative Guidance — documentation-only protocol
 
-Status: **protocol draft for v0.4**. It defines how an Agent should guide a user who cannot describe design in professional language. It does **not** add new CLI commands in v0.3.1, and it does not make Aestitch an aesthetic scorer.
+Status: **documentation-only protocol for v0.4.0**. It defines how an Agent should guide a user who cannot describe design in professional language. It does **not** add new CLI commands, and it does not make Aestitch an aesthetic scorer.
 
 The product goal is narrow:
 
@@ -228,6 +228,10 @@ The memory question (“what do you remember after closing the page?”) is **on
 
 Do not claim “distinctive” on the Agent's own authority. If the user cannot name anything specific, mark identity as `unverified`.
 
+### Cross-module check
+
+Identity and rhythm are judged on the page sequence, not on the hero in isolation. When a local change lands, compare the changed module with its neighbours and the full page at desktop and mobile sizes. Ask whether the page still has a deliberate tempo and whether the identity element survives outside the first screen. Do not turn a single external review into a rule such as “no centered images” or “never repeat a section”; treat it as a hypothesis about this page. The operational checklist is in [composition-aware iteration](design-method.md#5-composition-aware-iteration).
+
 ---
 
 ## 10. Protect what was approved
@@ -248,14 +252,13 @@ After the user explicitly accepts a direction:
 - No default style (dark, minimal, Swiss, brutalist, etc.).
 - No infinite questioning or prototype generation. Stop when the next decision belongs to the user.
 - No automatic promotion of project feedback into long-term taste.
-- No pretending a proposed v0.4 feature exists in the v0.3.1 CLI.
+- No pretending this protocol is an implemented CLI feature in v0.4.0.
 
 ---
 
 ## 12. Minimal JSON examples
 
-- [`intent.example.json`](../../../examples/creative-guidance/intent.example.json)
-- [`direction.example.json`](../../../examples/creative-guidance/direction.example.json)
-- [`feedback.example.json`](../../../examples/creative-guidance/feedback.example.json)
+In the Aestitch repository, see `examples/creative-guidance/`:
+`intent.example.json`, `direction.example.json` and `feedback.example.json`.
 
-These are examples for the Agent's working notes. They are not written by the CLI in v0.3.1.
+These are examples for the Agent's working notes. They are not written by the CLI in v0.4.0.

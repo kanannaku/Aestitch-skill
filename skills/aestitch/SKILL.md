@@ -5,7 +5,7 @@ license: MIT
 compatibility: Python 3.10+; optional Playwright Chromium for rendered observations and Pillow for pixel evidence.
 metadata:
   author: Suatlora
-  version: "0.3.1"
+  version: "0.4.0"
 ---
 
 # Aestitch — explore first, implement with evidence
@@ -19,7 +19,7 @@ metadata:
 3. If the user cannot describe their taste, show a *small set of genuinely distinct, rendered, interactive alternatives*, not a forced style questionnaire. Allow `both`, `neither`, and `unsure`. Record their exact words; do not turn contextual preference into a universal color or typography rule.
 4. Do not confuse *reference fidelity* (authorized reconstruction of a known design) with *original art direction* (extracting transferable principles without copying unique assets or code). State which task is being performed.
 
-## Creative Guidance (v0.4 protocol preview)
+## Creative Guidance (documentation-only protocol)
 
 When the user says the page feels “ordinary”, “AI-made”, or cannot explain what is wrong, first **triage** the problem as `local`, `direction`, `unsure` or `regression`. State the observable evidence and what would change your mind. Do not immediately change the style or rebuild the whole page.
 
@@ -32,7 +32,7 @@ Then:
 5. Record the user's words verbatim, separately from your interpretation. Keep preferences project-scoped unless the user explicitly asks for a long-term rule and confirms it again.
 6. Do not use “remembering one thing” as the sole test of distinctiveness; a memorable gimmick can still be bad design.
 
-This protocol is documented in [creative guidance](references/creative-guidance.md) with minimal JSON examples. v0.3.1 does **not** add `intent`, `direction` or `feedback` CLI commands; use `record`, `taste` and `brief` where they fit.
+This protocol is documented in [creative guidance](references/creative-guidance.md) with minimal JSON examples. v0.4.0 does **not** add `intent`, `direction` or `feedback` CLI commands; use `record`, `taste` and `brief` where they fit.
 
 ## Reference Observatory (observe actual evidence)
 
@@ -54,15 +54,18 @@ Aestitch Skill development and test website development are **different responsi
 
 After a local test, run `experiment record` with the Agent/model, Skill version **and Skill commit**, task, reported outcome and existing evidence. Use `--evidence PATH --evidence-class CLASS` (`observed`, `measured`, `inferred`, `unverified`) so provenance is explicit; `user_confirmed` cannot be recorded by an Agent and belongs to `experiment review`; `--artifact` remains a legacy alias that records files as `unverified`. Then `experiment report` generates a portable Markdown handoff; the report labels the commit and evidence classes as **declared by the Agent**, and shows the review source (`user_direct`, `agent_relayed`, `unknown`) without claiming identity verification. Paths must remain inside the test workspace and are re-checked and hash-verified when the report is read; absolute paths, `..` escapes and out-of-root symlinks are marked `invalid_path` and never read. Nothing is uploaded. The user may send screenshots and the packet to the Skill maintainer. Only confirmed user words may be recorded with `experiment review --user-confirmed`; no review is implied by an Agent's test success. The packet never changes `profile.json`, concept approval or design contracts.
 
-Always distinguish **test execution passed**, **measurable interaction/geometry differences**, **human aesthetic acceptance** and **inference about the Skill**. See [experiment evaluation protocol](../../examples/evaluation-protocol.md).
+Always distinguish **test execution passed**, **measurable interaction/geometry differences**, **human aesthetic acceptance** and **inference about the Skill**. See the experiment evaluation protocol in the Aestitch repository (`examples/evaluation-protocol.md`).
 
 ## Implement and protect the design
+
+When a user requests local visual adjustments or external reviewers flag composition inconsistencies, apply the Composition-Aware Iteration protocol in [design method](references/design-method.md). Review neighbouring sections and full-page consequences before treating a local fix as complete. Treat external reviews as attributed hypotheses, not user-confirmed taste; see [feedback method](references/feedback-method.md).
 
 1. Before changes: `scope snapshot` and optional baseline `capture`. Define allowed files and a justified complexity budget; avoid unnecessary dependencies or duplicated components.
 2. Hand off **running prototype + desktop/mobile captures + observable anchors + interaction-state descriptions + approved contract**, not generic adjective-heavy prompts. A coding agent must implement, not reinterpret, confirmed direction.
 3. On implementation, `observe capture --id implementation-... --url http://localhost:3000`, then `fidelity --concept selected-id --observation implementation-...` to compare image and landmark geometry. This is **evidence of mismatch**, never a beauty score. Recheck actual hover/click/touch/keyboard states separately. A contract can still be draft during evaluation, in which case do not claim approved fidelity.
 4. Run original `guard` and `scope check`; if full-page heights change, use `guard --top-viewport` to compare the first viewport without silently losing all evidence. This **does not** inspect changed sections lower down; additional captures and human review are required.
 5. Verify lint, typecheck, production build, accessibility basics and responsiveness. Record limitations instead of self-congratulation.
+6. Required readability gate: Run rendered text-contrast verification on the required viewports and relevant UI states before claiming implementation QA passed. Report PASS, FAIL, UNKNOWN or NOT_RUN with evidence. An unresolved FAIL or UNKNOWN blocks a clean QA-pass claim, but does not constitute an aesthetic rejection or authorization to redesign approved elements. Use `observe capture --check-text-contrast` and `observe report --require-text-contrast-pass`; see [evidence and safety](references/evidence-and-safety.md).
 
 ## Commands — from the target project root
 
@@ -86,13 +89,16 @@ aestitch concept compare --left direction-one --right direction-two
 # After implementation:
 aestitch observe capture --id implemented-home --url http://127.0.0.1:3000 --viewport both --steps 1
 aestitch fidelity --concept direction-one --observation implemented-home --viewport desktop
+# Rendered readability gate (FAIL/UNKNOWN/NOT_RUN is not a pass):
+aestitch observe capture --id readability-home --url http://127.0.0.1:3000 --check-text-contrast --steps 1
+aestitch observe report --id readability-home --require-text-contrast-pass
 # The original design memory, contracts, scopes and visual guard remain available.
 ```
 
 ## Hand off a finished experiment
 
 ```bash
-aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version 0.3.1 --skill-commit ec83d616 --task "Explore two distinct BFS interfaces" --result "Two prototypes rendered; both remain unapproved" --evidence prototypes/search-field.html --evidence-class observed --evidence reports/compare.json --evidence-class measured --comparison "C group; previously compared against A"
+aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version 0.4.0 --skill-commit ec83d616 --task "Explore two distinct BFS interfaces" --result "Two prototypes rendered; both remain unapproved" --evidence prototypes/search-field.html --evidence-class observed --evidence reports/compare.json --evidence-class measured --comparison "C group; previously compared against A"
 aestitch experiment report --id creative-01
 # Only after user supplied feedback:
 # aestitch experiment review --id creative-01 --acceptance neither --relative-preference left --comment "Both insufficient; left slightly clearer" --user-confirmed

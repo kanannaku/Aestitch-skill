@@ -19,9 +19,10 @@ import sys
 sys.path.insert(0, str(SCRIPTS))
 from aestitch import init, main
 from aestitch_creative import (
-    _fit_observation_id, _geometry_delta, _local_url, _next_concept_observation_id,
-    _trusted_html, concept_add, concept_compare, concept_render, fidelity_compare,
-    observe, observe_report,
+    _clear_text_contrast_derived, _fit_observation_id, _geometry_delta, _local_url,
+    _next_concept_observation_id, _trusted_html, concept_add, concept_compare, concept_render,
+    fidelity_compare, observe, observe_report, record_text_contrast_evidence,
+    text_contrast_gate, text_contrast_markdown, text_contrast_status,
 )
 
 
@@ -330,6 +331,182 @@ class CreativeWorkflowTest(unittest.TestCase):
         self.assertNotEqual(first, second)
 
 
+class TextContrastGateTest(unittest.TestCase):
+    """Deterministic gate logic. Browser measurement is exercised separately."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        init(self.root)
+
+    @staticmethod
+    def manifest(*statuses, observation_status="completed", requested=None):
+        names = ("desktop", "mobile")
+        viewports = {names[i]: {"text_contrast": {"status": status, "counts": {}, "rows": []}}
+                     for i, status in enumerate(statuses)}
+        return {"id": "sample", "status": observation_status,
+                "requested_viewports": list(requested) if requested is not None else list(viewports),
+                "viewports": viewports}
+
+    def write_observation(self, obs_id, manifest):
+        base = self.root / ".aestitch" / "observations" / obs_id
+        base.mkdir(parents=True)
+        (base / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    def finish_observation(self, obs_id, manifest):
+        """Create the evidence files and persist the manifest that names them."""
+        base = self.root / ".aestitch" / "observations" / obs_id
+        base.mkdir(parents=True)
+        manifest["id"] = obs_id
+        record_text_contrast_evidence(self.root, obs_id, manifest)
+        (base / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    def test_only_full_pass_is_pass(self):
+        self.assertEqual(text_contrast_status(self.manifest("PASS", "PASS")), "PASS")
+        self.assertEqual(text_contrast_status(self.manifest("PASS", "FAIL")), "FAIL")
+        self.assertEqual(text_contrast_status(self.manifest("PASS", "UNKNOWN")), "UNKNOWN")
+        self.assertEqual(text_contrast_status(self.manifest("PASS", "NOT_RUN")), "UNKNOWN")
+        self.assertEqual(text_contrast_status(self.manifest("NOT_RUN")), "NOT_RUN")
+        self.assertEqual(text_contrast_status({"viewports": {}}), "NOT_RUN")
+
+    def test_failed_or_unfinished_observation_never_passes(self):
+        self.assertEqual(text_contrast_status(self.manifest("PASS", observation_status="failed")), "UNKNOWN")
+        self.assertEqual(text_contrast_status(self.manifest("PASS", "PASS", observation_status="in_progress")), "UNKNOWN")
+        self.assertEqual(text_contrast_status(self.manifest("FAIL", observation_status="failed")), "FAIL")
+        self.assertEqual(text_contrast_status({"viewports": {"desktop": {"text_contrast": {"status": "PASS"}}}}), "UNKNOWN")
+
+    def test_missing_expected_viewport_blocks_aggregate(self):
+        manifest = self.manifest("PASS", requested=("desktop", "mobile"))
+        self.assertEqual(text_contrast_status(manifest), "UNKNOWN")
+        obs_id = self._persist("partial", manifest)
+        gate_status, detail = text_contrast_gate(self.root, obs_id)
+        self.assertEqual(gate_status, "UNKNOWN")
+        self.assertIn("mobile", detail)
+        self.assertEqual(main(["--root", str(self.root), "observe", "report", "--id", "partial",
+                               "--require-text-contrast-pass"]), 2)
+
+    def _persist(self, obs_id, manifest):
+        manifest["id"] = obs_id
+        self.write_observation(obs_id, manifest)
+        return obs_id
+
+    def test_one_low_contrast_functional_label_blocks_the_gate(self):
+        manifest = {"viewports": {"desktop": {"text_contrast": {
+            "status": "FAIL",
+            "counts": {"measured": 40, "pass": 39, "fail": 1, "unknown": 0},
+            "rows": [{"selector": ".archive-count", "tag": "span", "text": "02 条",
+                      "font_size_px": 10, "font_weight": 400, "large_text": False,
+                      "ratio": 2.38, "threshold": 4.5, "status": "FAIL", "reason": ""}],
+        }}}}
+        self.assertEqual(text_contrast_status(manifest), "FAIL")
+        payload = {"observation": "sample", "overall_status": "FAIL",
+                   "scope": "initial static page load", "large_text_rule": "rule",
+                   "viewports": {"desktop": manifest["viewports"]["desktop"]["text_contrast"]}}
+        markdown = text_contrast_markdown(payload)
+        self.assertIn("2.38:1", markdown)
+        self.assertIn(".archive-count", markdown)
+        self.assertIn("must not be reported as a passing readability check", markdown)
+
+    def test_gate_requires_observation_to_exist(self):
+        with self.assertRaisesRegex(ValueError, "not found"):
+            text_contrast_gate(self.root, "missing")
+
+    def test_legacy_observation_gate_is_not_run(self):
+        base = self.root / ".aestitch" / "observations" / "legacy"
+        base.mkdir(parents=True)
+        (base / "manifest.json").write_text(json.dumps({
+            "id": "legacy", "source": "offline-html",
+            "viewports": {"desktop": {"evidence": {}, "frames": []}},
+        }), encoding="utf-8")
+        status, detail = text_contrast_gate(self.root, "legacy")
+        self.assertEqual(status, "NOT_RUN")
+        self.assertIn("cannot be reported as passing", detail)
+
+    def test_failed_manifest_with_desktop_pass_blocks_cli(self):
+        manifest = self.manifest("PASS", observation_status="failed", requested=("desktop",))
+        obs_id = self._persist("failed-pass", manifest)
+        status, detail = text_contrast_gate(self.root, obs_id)
+        self.assertEqual(status, "UNKNOWN")
+        self.assertIn("not completed", detail)
+        self.assertEqual(main(["--root", str(self.root), "observe", "report",
+                               "--id", "failed-pass", "--require-text-contrast-pass"]), 2)
+
+    def test_single_requested_desktop_pass_exits_zero(self):
+        manifest = self.manifest("PASS", requested=("desktop",))
+        self.finish_observation("desktop-only", manifest)
+        self.assertEqual(text_contrast_gate(self.root, "desktop-only")[0], "PASS")
+        self.assertEqual(main(["--root", str(self.root), "observe", "report",
+                               "--id", "desktop-only", "--require-text-contrast-pass"]), 0)
+
+    def test_both_viewports_pass_exits_zero(self):
+        manifest = self.manifest("PASS", "PASS", requested=("desktop", "mobile"))
+        self.finish_observation("both-pass", manifest)
+        self.assertEqual(text_contrast_gate(self.root, "both-pass")[0], "PASS")
+        self.assertEqual(main(["--root", str(self.root), "observe", "report",
+                               "--id", "both-pass", "--require-text-contrast-pass"]), 0)
+
+    def test_fail_and_unknown_block_gate(self):
+        for index, status in enumerate(("FAIL", "UNKNOWN")):
+            obs_id = f"blocked-{index}"
+            self._persist(obs_id, self.manifest(status, requested=("desktop",)))
+            self.assertEqual(text_contrast_gate(self.root, obs_id)[0], status)
+            self.assertEqual(main(["--root", str(self.root), "observe", "report",
+                                   "--id", obs_id, "--require-text-contrast-pass"]), 2)
+
+    def test_missing_or_foreign_evidence_blocks_pass(self):
+        manifest = self.manifest("PASS", requested=("desktop",))
+        self.finish_observation("missing-file", manifest)
+        (self.root / manifest["text_contrast"]["evidence"]).unlink()
+        status, detail = text_contrast_gate(self.root, "missing-file")
+        self.assertEqual(status, "UNKNOWN")
+        self.assertIn("missing", detail)
+
+        foreign = self.manifest("PASS", requested=("desktop",))
+        self.finish_observation("foreign-evidence", foreign)
+        evidence = self.root / foreign["text_contrast"]["evidence"]
+        payload = json.loads(evidence.read_text(encoding="utf-8"))
+        payload["observation"] = "another-observation"
+        evidence.write_text(json.dumps(payload), encoding="utf-8")
+        status, detail = text_contrast_gate(self.root, "foreign-evidence")
+        self.assertEqual(status, "UNKNOWN")
+        self.assertIn("different observation", detail)
+
+    def test_corrupt_evidence_record_blocks_without_crashing(self):
+        manifest = self.manifest("PASS", requested=("desktop",))
+        self.finish_observation("corrupt", manifest)
+        path = self.root / ".aestitch" / "observations" / "corrupt" / "manifest.json"
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        saved["text_contrast"]["viewports"] = ["not-a-mapping"]
+        path.write_text(json.dumps(saved), encoding="utf-8")
+        status, detail = text_contrast_gate(self.root, "corrupt")
+        self.assertEqual(status, "UNKNOWN")
+        self.assertIn("no per-viewport", detail)
+
+    def test_overwrite_cleanup_removes_only_known_derived_files(self):
+        base = self.root / ".aestitch" / "observations" / "cleanup"
+        base.mkdir(parents=True)
+        for name in ("text-contrast.json", "text-contrast.json.tmp", "text-contrast.md",
+                     "manifest.json", "notes.txt"):
+            (base / name).write_text("{}", encoding="utf-8")
+        removed = _clear_text_contrast_derived(base)
+        self.assertEqual(sorted(removed), ["text-contrast.json", "text-contrast.json.tmp",
+                                           "text-contrast.md"])
+        self.assertTrue((base / "manifest.json").is_file())
+        self.assertTrue((base / "notes.txt").is_file())
+
+    def test_cli_flags_parse(self):
+        from aestitch import make_parser
+        parser = make_parser()
+        capture = parser.parse_args(["observe", "capture", "--id", "x", "--html-file", "a.html",
+                                     "--check-text-contrast"])
+        self.assertTrue(capture.check_text_contrast)
+        report = parser.parse_args(["observe", "report", "--id", "x", "--require-text-contrast-pass"])
+        self.assertTrue(report.require_text_contrast_pass)
+        default = parser.parse_args(["observe", "capture", "--id", "x", "--html-file", "a.html"])
+        self.assertFalse(default.check_text_contrast)
+
+
 @unittest.skipUnless(os.environ.get("AESTITCH_TEST_CHROMIUM"), "Optional Chromium E2E")
 class BrowserIntegrationTest(unittest.TestCase):
     def setUp(self):
@@ -438,6 +615,149 @@ class BrowserIntegrationTest(unittest.TestCase):
         self.assertEqual(page['http_status'],200)
         self.assertEqual(page['evidence']['title'],'Local demo')
         self.assertTrue(any(a['key']=='h1-0' for a in page['evidence']['anchors']))
+
+    CONTRAST_FIXTURE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Contrast fixture</title>
+<style>
+  body { background: #fff; font-family: sans-serif; }
+  #pass-normal { color: #000; font-size: 16px; }
+  #fail-low { color: #808080; font-size: 16px; }
+  #pass-large { color: #8a8a8a; font-size: 24px; font-weight: 400; }
+  #transparent-parent { background: rgba(255,255,255,0.5); }
+  #transparent-parent p { color: #000; font-size: 16px; }
+  #unknown-gradient { color: #000; background: linear-gradient(#fff, #000); }
+  #hidden { display: none; color: #eee; }
+  #low-button { color: #777; background: #222; font-size: 14px; }
+  #low-input-submit, #low-input-reset, #low-input-button {
+    color: #777; background: #222; font-size: 14px;
+  }
+  #hidden-input { display: none; }
+  #default-label-input { color: #000; background: #000; font-size: 14px; }
+  .gradient-parent { background: linear-gradient(#fff, #000); }
+  .gradient-parent > #opaque-child { background: #111; color: #eee; font-size: 16px; padding: 4px; }
+  .gradient-parent > #transparent-child { color: #000; font-size: 16px; }
+  .blend-parent { mix-blend-mode: multiply; }
+  .blend-parent > #blended-opaque-child { background: #111; color: #eee; font-size: 16px; padding: 4px; }
+  .opacity-parent { opacity: 0.5; }
+  .opacity-parent > #opacity-opaque-child { background: #111; color: #eee; font-size: 16px; padding: 4px; }
+  .filter-parent { filter: invert(1); }
+  .filter-parent > #filter-opaque-child { background: #111; color: #eee; font-size: 16px; padding: 4px; }
+</style></head>
+<body>
+<p id="pass-normal">Readable normal text</p>
+<p id="fail-low">Low contrast normal text</p>
+<p id="pass-large">Large heading text</p>
+<div id="transparent-parent"><p>Text on translucent parent</p></div>
+<p id="unknown-gradient">Text over gradient</p>
+<p id="hidden">Hidden text</p>
+<button id="low-button">Archive entry</button>
+<input type="submit" id="low-input-submit" value="Submit low">
+<input type="reset" id="low-input-reset" value="Reset low">
+<input type="button" id="low-input-button" value="Button low">
+<input type="submit" id="hidden-input" value="Hidden submit">
+<input type="submit" id="default-label-input">
+<div class="gradient-parent"><div id="opaque-child">Opaque child text</div></div>
+<div class="gradient-parent"><p id="transparent-child">Transparent child text</p></div>
+<div class="gradient-parent blend-parent"><div id="blended-opaque-child">Blended opaque text</div></div>
+<div class="gradient-parent opacity-parent"><div id="opacity-opaque-child">Opacity opaque text</div></div>
+<div class="gradient-parent filter-parent"><div id="filter-opaque-child">Filter opaque text</div></div>
+</body></html>
+"""
+
+    @staticmethod
+    def row_for(text_contrast, needle):
+        for row in text_contrast.get("rows", []):
+            if needle in row.get("selector", "") or needle in row.get("text", ""):
+                return row
+        return None
+
+    def test_text_contrast_fixture_passes_fails_and_unknowns(self):
+        fixture = self.root / "contrast.html"
+        fixture.write_text(self.CONTRAST_FIXTURE, encoding="utf-8")
+        observation = observe(self.root, "contrast", None, str(fixture), "desktop", 1,
+                              check_text_contrast=True)
+        item = observation["viewports"]["desktop"]["text_contrast"]
+        self.assertEqual(item["status"], "FAIL")
+        self.assertEqual(item["thresholds"]["normal"], 4.5)
+        self.assertIn("interaction_states", item["scope"]["not_covered"])
+
+        self.assertEqual(self.row_for(item, "pass-normal")["status"], "PASS")
+        low = self.row_for(item, "fail-low")
+        self.assertEqual(low["status"], "FAIL")
+        self.assertLess(low["ratio"], 4.5)
+        large = self.row_for(item, "pass-large")
+        self.assertEqual(large["status"], "PASS")
+        self.assertEqual(large["threshold"], 3.0)
+        self.assertTrue(large["large_text"])
+        self.assertEqual(self.row_for(item, "translucent")["status"], "PASS")
+        gradient = self.row_for(item, "unknown-gradient")
+        self.assertEqual(gradient["status"], "UNKNOWN")
+        self.assertTrue(gradient["background_complex"])
+        self.assertIsNone(self.row_for(item, "Hidden text"))
+        self.assertEqual(self.row_for(item, "Archive entry")["status"], "FAIL")
+        # Native input buttons expose their visible label through value, not a text node.
+        for needle in ("Submit low", "Reset low", "Button low"):
+            row = self.row_for(item, needle)
+            self.assertIsNotNone(row, needle)
+            self.assertEqual(row["status"], "FAIL", needle)
+        self.assertAlmostEqual(self.row_for(item, "Submit low")["ratio"],
+                               self.row_for(item, "Archive entry")["ratio"], places=2)
+        # A missing value still renders a localized default label and must be measured.
+        default_label = self.row_for(item, "default-label-input")
+        self.assertIsNotNone(default_label)
+        self.assertEqual(default_label["status"], "FAIL")
+        self.assertEqual(default_label["text"], "(browser default label)")
+        self.assertIsNone(self.row_for(item, "Hidden submit"))
+        # Coverage boundary: an opaque child panel hides the gradient ancestor.
+        self.assertEqual(self.row_for(item, "Opaque child text")["status"], "PASS")
+        # Transparent child still depends on the gradient: unknown.
+        self.assertEqual(self.row_for(item, "Transparent child text")["status"], "UNKNOWN")
+        # Group effects above the opaque panel can still change final colours.
+        self.assertEqual(self.row_for(item, "Blended opaque text")["status"], "UNKNOWN")
+        self.assertEqual(self.row_for(item, "Opacity opaque text")["status"], "UNKNOWN")
+        self.assertEqual(self.row_for(item, "Filter opaque text")["status"], "UNKNOWN")
+
+        evidence = self.root / ".aestitch" / "observations" / "contrast" / "text-contrast.json"
+        self.assertTrue(evidence.is_file())
+        self.assertTrue(evidence.with_suffix(".md").is_file())
+        self.assertEqual(json.loads(evidence.read_text(encoding="utf-8"))["overall_status"], "FAIL")
+        self.assertIn("Text contrast: FAIL", observe_report(self.root, "contrast"))
+        self.assertEqual(main(["--root", str(self.root), "observe", "report", "--id", "contrast",
+                               "--require-text-contrast-pass"]), 2)
+        self.assertEqual(main(["--root", str(self.root), "observe", "capture",
+                               "--id", "contrast-cli", "--html-file", str(fixture),
+                               "--viewport", "desktop", "--steps", "1",
+                               "--check-text-contrast"]), 2)
+
+    def test_overwrite_clears_stale_text_contrast_evidence(self):
+        fixture = self.root / "contrast.html"
+        fixture.write_text(self.CONTRAST_FIXTURE, encoding="utf-8")
+        observe(self.root, "stale", None, str(fixture), "desktop", 1, check_text_contrast=True)
+        base = self.root / ".aestitch" / "observations" / "stale"
+        self.assertTrue((base / "text-contrast.json").is_file())
+        self.assertTrue((base / "text-contrast.md").is_file())
+        manifest = observe(self.root, "stale", None, str(fixture), "desktop", 1, overwrite=True)
+        self.assertNotIn("text_contrast", manifest)
+        self.assertFalse((base / "text-contrast.json").exists())
+        self.assertFalse((base / "text-contrast.md").exists())
+        self.assertEqual(text_contrast_gate(self.root, "stale")[0], "NOT_RUN")
+        self.assertEqual(main(["--root", str(self.root), "observe", "report", "--id", "stale",
+                               "--require-text-contrast-pass"]), 2)
+
+    def test_text_contrast_default_off_and_cli_exit_codes(self):
+        plain = observe(self.root, "plain", None, str(self.html_a), "desktop", 1)
+        self.assertNotIn("text_contrast", plain["viewports"]["desktop"])
+        self.assertEqual(main(["--root", str(self.root), "observe", "report", "--id", "plain"]), 0)
+        self.assertEqual(main(["--root", str(self.root), "observe", "report", "--id", "plain",
+                               "--require-text-contrast-pass"]), 2)
+        self.assertEqual(main(["--root", str(self.root), "observe", "capture", "--id", "pass-cli",
+                               "--html-file", str(self.html_a), "--viewport", "desktop",
+                               "--steps", "1", "--check-text-contrast"]), 0)
+        passed = json.loads((self.root / ".aestitch" / "observations" / "pass-cli" /
+                             "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(passed["requested_viewports"], ["desktop"])
+        self.assertEqual(passed["text_contrast"]["overall_status"], "PASS")
+
 
 class DesignGuardianRegressionTest(unittest.TestCase):
     def setUp(self):

@@ -3,25 +3,27 @@
 **Discover your taste. Explore real art directions. Preserve design intent.**  
 *Evidence-first design intelligence for coding agents · by Suatlora*
 
-> **v0.3.1 preview:** Aestitch is a portable Agent Skill and a local Python CLI. It is **not** an autonomous aesthetic model: a human or vision-enabled agent must still interpret reference material, create concepts and judge the designs. It does not promise award-winning UI from a prompt. v0.3.1 is a reliability patch; the v0.4 Creative Guidance protocol is a draft, not an implemented CLI feature.
+> **v0.4.0 preview:** Aestitch is a portable Agent Skill and a local Python CLI. It is **not** an autonomous aesthetic model: a human or vision-enabled agent must still interpret reference material, create concepts and judge the designs. It does not promise award-winning UI from a prompt. v0.4.0 adds a rendered readability gate and composition-aware iteration guidance; the Creative Guidance protocol remains documentation-only and adds no CLI commands.
 
 ## Why it exists
 
 Vibe coding can create maintainable web pages that still feel generic. Adding more reference links or prohibitions is often not enough: an agent can lose the original visual ideas during **reference observation → art direction → prototype → code handoff**. Aestitch makes those steps explicit and testable, while retaining the memory and code-change controls introduced in v0.2.
 
-## What works in v0.3.1
+## What works in v0.4.0
 
 | Capability | CLI commands | What it really does |
 |---|---|---|
 | Reference Observatory | `observe capture/report` | Visits a **trusted, explicitly supplied** localhost/remote URL or renders a local offline HTML file; saves viewport screenshots, scroll frames, DOM element geometry and computed font/color facts. New manifests record `capture_context` (viewport, reduced motion, disabled animations) and `evidence_scope`; this is static evidence, not proof that hover/motion was observed. |
 | Art Direction Lab | `concept add/render/compare` | Stores independently **authored** HTML prototypes, renders desktop/mobile, flags identical prototypes, repeated mechanisms and near-identical landmark geometry. Repeated renders keep a history instead of overwriting the previous observation. Does not invent designs or rate beauty. |
 | Visual handoff | `fidelity` | Compares one prototype's screenshot and anchors to a separately observed implementation at the same viewport. Reports differences, not implementation correctness or aesthetic quality. |
+| Rendered readability gate | `observe capture --check-text-contrast`; `observe report --require-text-contrast-pass` | Measures rendered text against resolved solid/alpha backgrounds and reports PASS, FAIL, UNKNOWN or NOT_RUN per viewport. Strict mode exits 2 unless the observation completed, every expected viewport has current evidence, and all measured text passes. Complex backgrounds remain UNKNOWN rather than guessed. |
+| Composition-aware iteration | Protocol in `design-method.md` (no new command) | Requires reviewing neighbouring sections and full-page consequences before treating a local visual fix as complete. External reviews stay attributed hypotheses, never user-confirmed taste. |
 | Region-aware visual guard | `guard --top-viewport` | Compares first viewport of full-page screenshots even if page heights differ. Does not compare lower sections. |
 | Contextual taste | `taste compare/report` | Can separately record **absolute acceptance** and **relative preference** (e.g. "neither accepted, but B is more refined"). No automatic style inference. |
 | Experiment handoff | `experiment record/review/report` | Registers existing local evidence with hashes, an evidence class and the Skill commit; keeps Agent claims separate from a user-confirmed review. Nothing is uploaded. |
 | Existing controls | `reference`, `record`, `brief`, `contract`, `scope`, `capture`, `doctor` | Local reference metadata, explicit preference memory, draft/approved design contracts, source-change budgets and screenshot baselines. |
 
-The v0.4 **Creative Guidance protocol** is documented in [`skills/aestitch/references/creative-guidance.md`](skills/aestitch/references/creative-guidance.md) with minimal JSON examples. It describes triage, falsifiable hypotheses, two directions and preference elicitation; it does not add CLI commands in v0.3.1.
+The **Creative Guidance protocol** is documented in [`skills/aestitch/references/creative-guidance.md`](skills/aestitch/references/creative-guidance.md) with minimal JSON examples. It describes triage, falsifiable hypotheses, two directions and preference elicitation; it adds no `intent`, `direction` or `feedback` CLI commands in v0.4.0.
 
 All project evidence is kept in `<target-project>/.aestitch/` and ignored by git by default. No login, external model API, vector database or telemetry is required. Aestitch itself does not modify the website source.
 
@@ -37,7 +39,7 @@ uv run python -m playwright install chromium
 uv run aestitch doctor
 ```
 
-`aestitch doctor` must work when the script is executed directly; v0.3.1 fixes the
+`aestitch doctor` must work when the script is executed directly; v0.3.1 fixed the
 `importlib.util` crash that affected earlier direct runs.
 
 ### Agent Skill discovery
@@ -66,6 +68,8 @@ New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
 New-Item -ItemType SymbolicLink -Path "$HOME\.claude\skills\aestitch" `
   -Target "F:\Projects\Aestitch-skill\skills\aestitch"
 ```
+
+**What the Python package contains:** installing this project (`uv sync`, a built wheel or an sdist) provides the CLI entry point and the four Python modules only. It does not install `SKILL.md`, `references/`, `examples/` or the Agent Skill folder. Agents need the Skill files copied or linked from the repository as shown above; the wheel is a CLI distribution, not a complete Agent Skill bundle.
 
 If you have not cloned yet, clone `https://github.com/kanannaku/Aestitch-skill` first. Python >=3.10 is required. Playwright/Chromium supports browser capture; Pillow supports image evidence. You can run `uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\YOUR-PROJECT ...` from anywhere. **The `--root` flag comes before the subcommand.**
 
@@ -101,6 +105,10 @@ From a **target website project** whose dev server you have started on localhost
 ```powershell
 uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id my-home --url http://127.0.0.1:3000 --viewport both --steps 3
 uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id my-home
+# Rendered readability gate. Strict mode requires a completed observation and every
+# expected viewport; FAIL, UNKNOWN and NOT_RUN all exit 2.
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id readability-home --url http://127.0.0.1:3000 --viewport both --steps 1 --check-text-contrast
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id readability-home --require-text-contrast-pass
 ```
 
 Only explicitly trusted external references may be sampled with `--allow-remote`, and resource restrictions can result in incomplete rendering. A complex WebGL/scroll/hover site still needs a **manual browser interaction and recording**; the CLI captures static frames and computed CSS/geometry, **not the whole experience**. A metadata-only `reference add --url` command never visits the page.
@@ -128,7 +136,7 @@ file; recordable classes are `observed`, `measured`, `inferred` and `unverified`
 `experiment review`, which also records the feedback's source.
 
 ```powershell
-uv run aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version 0.3.1 --skill-commit ec83d616 --task "Explore two distinct interfaces" --result "Two prototypes rendered; both remain unapproved" --evidence prototypes/one.html --evidence-class observed --evidence reports/compare.json --evidence-class measured
+uv run aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version 0.4.0 --skill-commit ec83d616 --task "Explore two distinct interfaces" --result "Two prototypes rendered; both remain unapproved" --evidence prototypes/one.html --evidence-class observed --evidence reports/compare.json --evidence-class measured
 uv run aestitch experiment report --id creative-01
 # Only after the user actually supplies feedback:
 uv run aestitch experiment review --id creative-01 --acceptance neither --relative-preference left --comment "Both insufficient; left slightly clearer" --source user_direct --context "Reviewed the screenshots in person" --user-confirmed
@@ -146,13 +154,14 @@ reported separately as `present`, `missing`, `changed`, `unreadable` or `invalid
 ## Architecture and trust
 
 - Portable Skill: [`skills/aestitch/SKILL.md`](skills/aestitch/SKILL.md) and on-demand references.
-- CLI modules: `aestitch.py` (commands, existing memory/guard), `aestitch_workflows.py` (memory, references, contracts and scope) and `aestitch_creative.py` (observations, concepts, fidelity).
+- CLI modules: `aestitch.py` (commands, existing memory/guard), `aestitch_workflows.py` (memory, references, contracts and scope), `aestitch_creative.py` (observations, concepts, fidelity, readability) and `aestitch_experiments.py` (experiment packets).
 - Web pages and supplied HTML are **untrusted**. Browser capture blocks all external subresources for offline files, and only permits same-host requests for live pages. Inline JS in supplied HTML can still run; use trusted material only.
 - Design contracts require explicit user confirmation before marking approved. A CLI flag cannot independently verify human consent.
 - The CLI cannot infer personal taste, inspect hidden animations or audio, automatically extract design meaning from screenshots, create original artwork, measure an aesthetic score or prove superiority over other Skills.
+- Readability verification covers the initial static load at captured viewports. Complex backgrounds (images, gradients, filters, blend modes, opacity groups) are reported UNKNOWN; Shadow DOM, Canvas, SVG, iframe, pseudo-element text and non-button form controls are not measured. UNKNOWN never counts as a pass.
 
 ## Evaluation and evidence
 
-Run `python -m unittest discover -s tests -v`. Optional real Chromium integration requires `AESTITCH_TEST_CHROMIUM=1` and a Playwright Chromium installation (or an explicit `AESTITCH_CHROMIUM_EXECUTABLE`). See [evaluation protocol](examples/evaluation-protocol.md). An earlier A/C experiment showed visual constraints alone did not produce a distinctive art direction; no formal benchmark of v0.3 aesthetic quality has been completed.
+Run `python -m unittest discover -s tests -v`. Optional real Chromium integration requires `AESTITCH_TEST_CHROMIUM=1` and a Playwright Chromium installation (or an explicit `AESTITCH_CHROMIUM_EXECUTABLE`). See [evaluation protocol](examples/evaluation-protocol.md). An earlier A/C experiment showed visual constraints alone did not produce a distinctive art direction; no formal benchmark of Aestitch's aesthetic quality has been completed.
 
-See [中文文档](README.zh-CN.md), [creative demo](examples/creative-lab/README.md), [visual observation rules](skills/aestitch/references/observation-evidence.md) and the [v0.4 Creative Guidance protocol draft](skills/aestitch/references/creative-guidance.md).
+See [中文文档](README.zh-CN.md), [creative demo](examples/creative-lab/README.md), [visual observation rules](skills/aestitch/references/observation-evidence.md) and the [Creative Guidance protocol (documentation-only)](skills/aestitch/references/creative-guidance.md).

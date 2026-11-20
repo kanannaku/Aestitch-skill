@@ -1,9 +1,9 @@
 # Creative Guidance examples
 
-These JSON files illustrate the v0.4 **protocol draft** in
+These JSON files illustrate the v0.4.0 **documentation-only protocol** in
 [`skills/aestitch/references/creative-guidance.md`](../../skills/aestitch/references/creative-guidance.md).
 
-They are working-note examples, not CLI output. Aestitch v0.3.1 does not create or
+They are working-note examples, not CLI output. Aestitch v0.4.0 does not create or
 validate these files automatically; the Agent writes them only after the user confirms
 the relevant statements.
 

@@ -1,5 +1,71 @@
 # Changelog
 
+## v0.4.0 — 2026-11-19
+
+Feature and documentation alignment release candidate. Version declarations in
+`pyproject.toml`, the CLI, Skill metadata and README examples are unified at 0.4.0;
+this entry does not imply a tag, commit or publication.
+
+### Added
+
+- Rendered readability gate: `observe capture --check-text-contrast` measures rendered
+  text against resolved backgrounds and writes `text-contrast.json` / `.md` per
+  observation. `observe report --require-text-contrast-pass` exits 2 unless the
+  observation completed, every expected viewport has current evidence, and all measured
+  text passes.
+- Conservative background resolution: solid and alpha-composited colours are measured;
+  images, gradients, filters, backdrop filters, blend modes, opacity groups and
+  `background-clip:text` return UNKNOWN. An opaque child panel still returns UNKNOWN
+  when an ancestor opacity, filter or blend effect composites the subtree.
+- Native `input[type=submit|reset|button]` value text is measured. A submit/reset
+  without a value is measured as the browser default label; hidden controls are
+  skipped.
+- Composition-Aware Iteration protocol in `design-method.md`, with matching guidance in
+  `feedback-method.md` and a handoff field in `visual-handoff.md`.
+- Expanded Creative Guidance protocol (documentation only): triage, falsifiable
+  hypotheses, two directions, preference elicitation and a plain-language evidence
+  table. It adds no `intent`, `direction` or `feedback` CLI commands.
+- Worked composition-iteration example in `examples/design-review/`.
+
+### Fixed
+
+- Added the missing `aestitch_experiments` module to the packaged `py-modules`, so an
+  installed build can run `aestitch experiment` instead of raising `ImportError`.
+- Readability gate integrity: a failed or unfinished observation can no longer pass;
+  missing expected viewports, missing/unreadable/foreign evidence and
+  manifest/evidence mismatches are blocked with a reason.
+- `observe --overwrite` clears only the known text-contrast artifacts of that
+  observation before writing new evidence; an old PASS is never reused as current.
+- Coverage boundary: ancestor opacity, filter or mix-blend-mode above an opaque child
+  background now returns UNKNOWN instead of measuring it as if the compositing effect
+  did not exist.
+
+### Documentation
+
+- Version identity unified at 0.4.0 (`pyproject.toml`, CLI `--version`, SKILL metadata
+  and README examples).
+- English and Chinese READMEs describe the readability gate, composition-aware
+  iteration and the real coverage limits.
+- `examples/design-review/` is documented as a fictional worked example, not a
+  template or an approved design.
+- `SKILL.md` and the Creative Guidance reference point to repository example files by
+  path instead of relative links, so a copied Skill folder has no cross-directory links.
+- README now states that the Python package installs the CLI modules only; Skill
+  files, references and examples are distributed through the repository/Skill folder.
+
+### Packaging
+
+- License metadata now uses the SPDX expression `MIT` with `license-files = ["LICENSE"]`;
+  the deprecated TOML license table and MIT classifier were removed. Building requires
+  `setuptools>=77`. Runtime dependencies and modules are unchanged.
+
+### Known limitations
+
+- Readability covers the initial static load at captured viewports only.
+- Complex backgrounds are UNKNOWN; Shadow DOM, Canvas, SVG, iframe, pseudo-element text
+  and non-button form controls are not measured.
+- No screenshot pixel sampling for contrast and no automatic aesthetic score.
+
 ## v0.3.1 — 2026-11-18
 
 Reliability patch. No new creative-generation or aesthetic-scoring features.

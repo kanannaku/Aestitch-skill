@@ -2,19 +2,21 @@
 
 **发现审美，探索真正不同的创意方向，并减少从设计到代码的表达损失。**
 
-> **v0.3.1 预览版**：这是一套 Agent Skill + 本地 Python 工具。它不会自动变成艺术总监，也不会凭网站链接直接生成优秀的原创设计。它提供真实页面采集、视觉原型对照和跨模型交接证据，让 Codex 等 Agent 的设计工作可以被观察与验证。v0.3.1 是可靠性补丁；v0.4 Creative Guidance 目前只是协议草案，尚未成为 CLI 功能。
+> **v0.4.0 预览版**：这是一套 Agent Skill + 本地 Python 工具。它不会自动变成艺术总监，也不会凭网站链接直接生成优秀的原创设计。它提供真实页面采集、视觉原型对照和跨模型交接证据，让 Codex 等 Agent 的设计工作可以被观察与验证。v0.4.0 增加了渲染后可读性门禁与构图感知迭代流程；Creative Guidance 仍是文档协议，不新增 CLI 命令。
 
 ## 为什么改版？
 
 上一轮 A/C 对照实验里，无 Skill 与 Aestitch 都做出了比较规整的作品集，但未能达到用户希望的视觉特色。继续改颜色、调网格和追加动效没有解决问题。v0.3 把工作重心移到设计之前的三个环节：**观察参考 → 探索原创艺术方向 → 验证设计实现**。
 
-## 新功能
+## 功能一览
 
 | 功能 | 可以做 | 不能做 |
 |---|---|---|
 | `observe capture/report` | 使用真实 Chromium 截图，记录不同滚动位置、字体、元素大小和位置、交互控件概况；新 manifest 明确记录采集上下文和证据范围 | 自动理解设计情绪、完整录制复杂动效或 WebGL 效果 |
 | `concept add/render/compare` | 存储独立 HTML 创意原型，检查两套方案是否只改了颜色/文案/细节；重复渲染保留历史 observation，不默认覆盖 | 自己发明漂亮原型或判断哪套最好看 |
 | `fidelity` | 对比原型与实际实现的截图和 DOM 几何证据 | 代替人工验收交互和整体艺术效果 |
+| `observe capture --check-text-contrast` / `observe report --require-text-contrast-pass` | 测量渲染后文字与可解析背景的对比度，逐视口给出 PASS / FAIL / UNKNOWN / NOT_RUN；严格模式要求 observation 完成、预期视口齐全、全部实测通过，否则退出 2 | 复杂背景直接判 UNKNOWN，不猜测；不覆盖 Shadow DOM、Canvas、SVG、iframe、伪元素和其他表单控件 |
+| 构图感知迭代（协议，无新命令） | 局部修改前先检查相邻区块与整页后果；外部评审只作为有出处的假设 | 代替用户审美判断，或把局部修改自动称为“构图更好” |
 | `guard --top-viewport` | 全页高度变化时，仍比较页面顶部同一视口 | 自动检查所有下方模块 |
 | `taste compare --relative-preference ... --acceptance ...` | 记录“两套都不满意，但 C 稍好”这类复杂反馈 | 根据一次选择永久定义用户风格 |
 | `experiment record/review/report` | 登记本地证据路径、哈希、证据类别和 Skill commit；Agent 声称与用户确认分开 | 上传文件、自动批准设计或代替用户评审 |
@@ -23,7 +25,7 @@ v0.2 的 `reference`、`taste`、`contract`、`scope` 和旧视觉截图工具�
 
 ## Windows 更新步骤
 
-你已经在 `F:\Projects\Aestitch-skill` 安装过 v0.2，因此**不需要重新克隆**：
+你已经在 `F:\Projects\Aestitch-skill` 安装过旧版本，因此**不需要重新克隆**：
 
 ```powershell
 cd F:\Projects\Aestitch-skill
@@ -61,6 +63,8 @@ New-Item -ItemType SymbolicLink -Path "$HOME\.claude\skills\aestitch" `
 
 复制到 Codex 项目前先检查是否有本地修改；不要盲目覆盖。
 
+**Python 包包含什么：** 安装本项目（`uv sync`、构建出的 wheel 或 sdist）只提供 CLI 入口和四个 Python 模块，不会安装 `SKILL.md`、`references/`、`examples/` 或 Agent Skill 文件夹。Agent 仍需按上表从仓库复制或链接 Skill 文件；wheel 是 CLI 分发，不是完整的 Agent Skill 包。
+
 ## 实际浏览器截图（演示，不是审美评分）
 
 | 空间研究网络 | 字体主导的实验性编辑页面 |
@@ -93,6 +97,10 @@ uv run aestitch concept compare --left spatial --right editorial
 ```powershell
 uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id my-home --url http://127.0.0.1:3000 --viewport both --steps 3
 uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id my-home
+# 渲染后可读性门禁：严格模式要求 observation 已完成且预期视口齐全；
+# FAIL、UNKNOWN、NOT_RUN 都会退出 2。
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe capture --id readability-home --url http://127.0.0.1:3000 --viewport both --steps 1 --check-text-contrast
+uv run --project F:\Projects\Aestitch-skill aestitch --root F:\Projects\aestitch-lab-c observe report --id readability-home --require-text-contrast-pass
 ```
 
 外部站点只能在明确允许后使用 `--allow-remote`，且默认阻止其他主机的资源，因此 CDN、跨域字体、WebGL 素材可能缺失。对于 Psychoactive、Orchestrated 等复杂交互网站，仍需要浏览器里实际操作与录屏，不能靠静态截图谎称已经理解所有动效。
@@ -112,7 +120,7 @@ v0.3 增加了`experiment` 交接命令，用于把本地 AI 的运行结果整�
 
 ```powershell
 # 在实验项目根目录运行；只登记已经存在的本地证据
-uv run --project F:\Projects\Aestitch-skill aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version "0.3.1" --skill-commit "ec83d616" --task "BFS 两种原创交互方案" --result "两套可运行原型；尚待用户评审" --evidence "prototypes/search-field.html" --evidence-class observed --evidence "reports/interaction.json" --evidence-class measured
+uv run --project F:\Projects\Aestitch-skill aestitch experiment record --id creative-01 --agent "Claude Code" --model "DeepSeek V4 Pro" --skill-version "0.4.0" --skill-commit "ec83d616" --task "BFS 两种原创交互方案" --result "两套可运行原型；尚待用户评审" --evidence "prototypes/search-field.html" --evidence-class observed --evidence "reports/interaction.json" --evidence-class measured
 uv run --project F:\Projects\Aestitch-skill aestitch experiment report --id creative-01
 ```
 

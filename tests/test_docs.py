@@ -1,4 +1,4 @@
-"""Documentation stays aligned with the real CLI and the v0.4 protocol draft."""
+"""Documentation stays aligned with the real CLI and the documentation-only protocol."""
 from pathlib import Path
 import argparse
 import json

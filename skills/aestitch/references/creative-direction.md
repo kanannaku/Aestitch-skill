@@ -25,6 +25,17 @@ Examples of *different methods*, not recommended aesthetics:
 
 Do not copy a reference site's distinctive code, imagery, branding or complete structure. Different words and colors over the same grid is not a meaningful new direction.
 
+## Cross-module identity and rhythm
+
+A direction is not proven by a hero alone. Carry it across modules and check the sequence:
+
+- Which module carries the dominant scale, and where does the page deliberately change tempo?
+- Is each module's shape derived from its content role, or does every section repeat the same header-and-columns skeleton?
+- Which one element (type treatment, crop logic, rule, colour, spacing move) recurs enough to be recognised as identity without becoming wallpaper?
+- After adding or removing an image or section, does the page still read as one composition rather than a stack of bands?
+
+Variation is not randomness, and repetition is not automatically a template. A repeated structure can be the identity when the content genuinely shares that structure. Check relationships before adding decoration. See [composition-aware iteration](design-method.md) for the edit-time checklist.
+
 ## User discovery
 
 Show independent prototypes first, **without deciding which is best**. Accept 'neither' and 'cannot explain why'. Record absolute approval separately from a relative preference. One chosen prototype does not establish a lifelong style.

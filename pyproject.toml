@@ -1,16 +1,17 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "aestitch-skill"
-version = "0.3.1"
+version = "0.4.0"
 description = "Evidence-first creative direction and visual handoff workflow for coding agents"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{name = "Suatlora"}]
-classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
+classifiers = ["Programming Language :: Python :: 3"]
 
 [project.optional-dependencies]
 visual = ["pillow>=10"]
@@ -21,7 +22,7 @@ all = ["pillow>=10", "playwright>=1.40"]
 aestitch = "aestitch:main"
 
 [tool.setuptools]
-py-modules = ["aestitch", "aestitch_workflows", "aestitch_creative"]
+py-modules = ["aestitch", "aestitch_workflows", "aestitch_creative", "aestitch_experiments"]
 
 [tool.setuptools.package-dir]
 "" = "skills/aestitch/scripts"
