@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "round": 1,
+  "target": "concept-field-note / state-expanded",
+  "reaction": "change",
+  "element": "motion",
+  "user_words": "这个展开有点慢，我想它干脆一点，不要拖。",
+  "agent_interpretation": "The 300ms expand may feel slow; test 150ms without changing the layout.",
+  "scope": "project",
+  "confirmed": true,
+  "confirmed_note": "Sample declaration that the user gave this feedback; not identity verification.",
+  "recorded_at": "2026-11-18T10:05:00+00:00"
+}

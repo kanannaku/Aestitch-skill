@@ -10,6 +10,7 @@ A design is not fully specified by adjectives such as "cinematic", "tech", "high
 - Fonts (actual load status/fallback), colors, spacing, assets and licenses.
 - Intended behavior: mouse, keyboard, touch, reduced motion.
 - Approved vs draft decisions, explicit ambiguities and what can change.
+- Rendered readability verification: whether it ran; viewports and interface states covered; PASS, FAIL, UNKNOWN or NOT_RUN; failing elements; unresolved unknowns; uncovered states; evidence paths.
 - Allowed source files and reasonable change budget.
 
 ## Check implementation
