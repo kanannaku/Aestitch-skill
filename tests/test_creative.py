@@ -321,6 +321,20 @@ class CreativeWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Observation exists"):
             observe(self.root, "concept-orphan", None, str(self.html_a), "desktop", 1)
 
+    def test_existing_observation_wins_over_missing_browser_dependency(self):
+        state = self.root / ".aestitch"
+        (state / "observations" / "concept-orphan").mkdir(parents=True)
+        with patch.dict(sys.modules, {"playwright": None, "playwright.sync_api": None}):
+            with self.assertRaisesRegex(ValueError, "Observation exists"):
+                observe(self.root, "concept-orphan", None, str(self.html_a), "desktop", 1)
+
+    def test_missing_browser_dependency_fails_before_creating_observation(self):
+        obs_dir = self.root / ".aestitch" / "observations" / "fresh-obs"
+        with patch.dict(sys.modules, {"playwright": None, "playwright.sync_api": None}):
+            with self.assertRaisesRegex(ValueError, "Install Playwright"):
+                observe(self.root, "fresh-obs", None, str(self.html_a), "desktop", 1, claim=True)
+        self.assertFalse(obs_dir.exists())
+
     def test_long_concept_ids_do_not_collide(self):
         base_a = "concept-" + "a" * 63
         base_b = "concept-" + "a" * 62 + "b"

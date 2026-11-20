@@ -482,6 +482,14 @@ def observe(root: Path, obs_id: str, url: str | None, html_file: str | None,
                 raise ValueError("Observed URL host does not match the linked reference")
     base = state / "observations" / obs_id
     manifest_path = base / "manifest.json"
+    # An existing directory owns this ID whether or not the optional browser
+    # dependency is installed, so check it before importing Playwright; otherwise
+    # a missing dependency would mask the conflict. The claim below stays atomic.
+    if base.exists() and not overwrite:
+        if claim:
+            raise ObservationReserved("Observation ID is already reserved or used: " + obs_id)
+        # An orphan directory from a failed render still owns this ID.
+        raise ValueError("Observation exists; use a new --id or explicit --overwrite")
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -491,9 +499,6 @@ def observe(root: Path, obs_id: str, url: str | None, html_file: str | None,
             base.mkdir(parents=True, exist_ok=False)
         except FileExistsError as exc:
             raise ObservationReserved("Observation ID is already reserved or used: " + obs_id) from exc
-    elif base.exists() and not overwrite:
-        # An orphan directory from a failed render still owns this ID.
-        raise ValueError("Observation exists; use a new --id or explicit --overwrite")
     if overwrite and base.exists():
         # Old derived reports must never survive a rewrite as current evidence.
         _clear_text_contrast_derived(base)
